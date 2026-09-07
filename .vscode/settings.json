@@ -1,0 +1,11 @@
+{
+  "idf.currentSetup": "/home/evincars/.espressif/v6.1/esp-idf",
+  "idf.customExtraVars": {},
+  "clangd.path": "/home/evincars/.espressif/tools/esp-clangd/esp-21.1.3_20260408/esp-clangd/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=/home/evincars/evicars.github.com/esp32/build"
+  ],
+  "idf.flashType": "UART"
+}
