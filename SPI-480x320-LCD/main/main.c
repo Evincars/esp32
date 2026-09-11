@@ -35,6 +35,9 @@
 
   #define COLOR_BACKGROUND 0x0000
   #define COLOR_FOREGROUND 0xffff
+  #define COLOR_RED 0xf800
+  #define COLOR_GREEN 0x07e0
+  #define COLOR_BLUE 0x001f
 
   static const char *TAG = "serial_tft";
   static spi_device_handle_t s_lcd;
@@ -124,7 +127,7 @@
     ESP_ERROR_CHECK(spi_bus_initialize(TFT_HOST, &bus_config, SPI_DMA_CH_AUTO));
 
     spi_device_interface_config_t device_config = {
-      .clock_speed_hz = 40 * 1000 * 1000,
+      .clock_speed_hz = 20 * 1000 * 1000,
       .mode = 0,
       .spics_io_num = TFT_PIN_CS,
       .queue_size = 1,
@@ -172,6 +175,38 @@
     destination[0] = (color >> 8) & 0xf8;
     destination[1] = (color >> 3) & 0xfc;
     destination[2] = (color << 3) & 0xf8;
+  }
+
+  static void lcd_fill_screen(uint16_t color)
+  {
+    uint8_t *scanline = heap_caps_malloc(LCD_WIDTH * 3, MALLOC_CAP_DMA);
+    ESP_ERROR_CHECK(scanline == NULL ? ESP_ERR_NO_MEM : ESP_OK);
+
+    uint8_t pixel[3];
+    rgb565_to_rgb666(color, pixel);
+    for (int x = 0; x < LCD_WIDTH; ++x) {
+      memcpy(&scanline[x * 3], pixel, sizeof(pixel));
+    }
+
+    lcd_set_window(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1);
+    for (int y = 0; y < LCD_HEIGHT; ++y) {
+      lcd_send(true, scanline, LCD_WIDTH * 3);
+    }
+    free(scanline);
+  }
+
+  static void lcd_self_test(void)
+  {
+    ESP_LOGI(TAG, "TFT self-test: red");
+    lcd_fill_screen(COLOR_RED);
+    vTaskDelay(pdMS_TO_TICKS(350));
+    ESP_LOGI(TAG, "TFT self-test: green");
+    lcd_fill_screen(COLOR_GREEN);
+    vTaskDelay(pdMS_TO_TICKS(350));
+    ESP_LOGI(TAG, "TFT self-test: blue");
+    lcd_fill_screen(COLOR_BLUE);
+    vTaskDelay(pdMS_TO_TICKS(350));
+    lcd_fill_screen(COLOR_BACKGROUND);
   }
 
   static void render_terminal(const char screen[TERM_ROWS][TERM_COLUMNS])
@@ -316,14 +351,23 @@
     ESP_ERROR_CHECK(uart_param_config(SERIAL_PORT, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(SERIAL_PORT, SERIAL_PIN_TX, SERIAL_PIN_RX,
                    UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+        ESP_LOGI(TAG, "UART2 RX=GPIO%d TX=GPIO%d at %d baud",
+          SERIAL_PIN_RX, SERIAL_PIN_TX, SERIAL_BAUD_RATE);
 
     lcd_initialize();
+        ESP_LOGI(TAG, "ILI9488 initialized at 20 MHz");
+        lcd_self_test();
     s_serial_stream = xStreamBufferCreate(4096, 1);
     if (s_serial_stream == NULL) {
       ESP_LOGE(TAG, "Unable to allocate serial stream buffer");
       return;
     }
 
-    xTaskCreate(uart_receive_task, "uart_receive", 3072, NULL, 10, NULL);
-    xTaskCreate(display_task, "tft_terminal", 4096, NULL, 8, NULL);
+    BaseType_t uart_task_created =
+      xTaskCreate(uart_receive_task, "uart_receive", 3072, NULL, 10, NULL);
+    BaseType_t display_task_created =
+      xTaskCreate(display_task, "tft_terminal", 4096, NULL, 8, NULL);
+    ESP_ERROR_CHECK(uart_task_created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(display_task_created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_LOGI(TAG, "UART and TFT terminal tasks started");
   }
