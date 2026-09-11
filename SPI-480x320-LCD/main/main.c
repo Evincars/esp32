@@ -329,11 +329,32 @@
     while (true) {
       int length = uart_read_bytes(SERIAL_PORT, input, sizeof(input), pdMS_TO_TICKS(100));
       if (length > 0) {
+        /* Visible on the flashing/console port (ttyACM0), never on ttyUSB0. */
+        ESP_LOGI(TAG, "UART2 RX %d bytes: %.*s", length, length, (const char *)input);
         size_t sent = xStreamBufferSend(s_serial_stream, input, (size_t)length, portMAX_DELAY);
         if (sent != (size_t)length) {
           ESP_LOGW(TAG, "Serial stream overflow");
         }
       }
+    }
+  }
+
+  static void uart_self_test(void)
+  {
+    const char pattern[] = "UART2 loopback OK";
+    uint8_t response[sizeof(pattern)] = {0};
+
+    /* Internal loopback bypasses GPIO16/17 wiring entirely, isolating the
+       driver/config from the external USB-TTL adapter and its baud rate. */
+    uart_set_loop_back(SERIAL_PORT, true);
+    uart_write_bytes(SERIAL_PORT, pattern, sizeof(pattern) - 1);
+    int received = uart_read_bytes(SERIAL_PORT, response, sizeof(pattern) - 1, pdMS_TO_TICKS(200));
+    uart_set_loop_back(SERIAL_PORT, false);
+
+    if (received == (int)(sizeof(pattern) - 1) && memcmp(response, pattern, received) == 0) {
+      ESP_LOGI(TAG, "UART2 loopback OK: driver/config is correct, check external wiring/baud next");
+    } else {
+      ESP_LOGW(TAG, "UART2 loopback FAILED (%d bytes received): driver/config problem", received);
     }
   }
 
@@ -347,12 +368,13 @@
       .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
       .source_clk = UART_SCLK_DEFAULT,
     };
-    ESP_ERROR_CHECK(uart_driver_install(SERIAL_PORT, 2048, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(SERIAL_PORT, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(SERIAL_PORT, SERIAL_PIN_TX, SERIAL_PIN_RX,
                    UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-        ESP_LOGI(TAG, "UART2 RX=GPIO%d TX=GPIO%d at %d baud",
-          SERIAL_PIN_RX, SERIAL_PIN_TX, SERIAL_BAUD_RATE);
+    ESP_ERROR_CHECK(uart_driver_install(SERIAL_PORT, 2048, 0, 0, NULL, 0));
+    ESP_LOGI(TAG, "UART2 RX=GPIO%d TX=GPIO%d at %d baud",
+      SERIAL_PIN_RX, SERIAL_PIN_TX, SERIAL_BAUD_RATE);
+    uart_self_test();
 
     lcd_initialize();
         ESP_LOGI(TAG, "ILI9488 initialized at 20 MHz");
