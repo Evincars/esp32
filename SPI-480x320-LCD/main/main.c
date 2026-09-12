@@ -322,19 +322,41 @@
     }
   }
 
+  /* Dumps raw bytes as hex so garbled/non-printable data is still visible. */
+  static void log_rx_hex(const uint8_t *data, int length)
+  {
+    char hex[16 * 3 + 1];
+    for (int offset = 0; offset < length; offset += 16) {
+      int chunk = length - offset < 16 ? length - offset : 16;
+      char *cursor = hex;
+      for (int i = 0; i < chunk; ++i) {
+        cursor += sprintf(cursor, "%02x ", data[offset + i]);
+      }
+      ESP_LOGI(TAG, "RX[%3d]: %s", offset, hex);
+    }
+  }
+
   static void uart_receive_task(void *argument)
   {
     (void)argument;
     uint8_t input[256];
+    TickType_t last_activity = xTaskGetTickCount();
     while (true) {
-      int length = uart_read_bytes(SERIAL_PORT, input, sizeof(input), pdMS_TO_TICKS(100));
+      int length = uart_read_bytes(SERIAL_PORT, input, sizeof(input), pdMS_TO_TICKS(2000));
       if (length > 0) {
         /* Visible on the flashing/console port (ttyACM0), never on ttyUSB0. */
-        ESP_LOGI(TAG, "UART2 RX %d bytes: %.*s", length, length, (const char *)input);
+        ESP_LOGI(TAG, "UART2 RX %d byte(s)", length);
+        log_rx_hex(input, length);
+        last_activity = xTaskGetTickCount();
         size_t sent = xStreamBufferSend(s_serial_stream, input, (size_t)length, portMAX_DELAY);
         if (sent != (size_t)length) {
           ESP_LOGW(TAG, "Serial stream overflow");
         }
+      } else if (xTaskGetTickCount() - last_activity > pdMS_TO_TICKS(5000)) {
+        ESP_LOGW(TAG, "UART2 idle: 0 bytes in the last 5s. Check GND common with the "
+                      "USB-TTL adapter, TX/RX not swapped, matching 115200 baud on the "
+                      "host side, and that this ESP32 module has no PSRAM on GPIO16/17.");
+        last_activity = xTaskGetTickCount();
       }
     }
   }
