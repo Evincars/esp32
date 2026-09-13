@@ -11,6 +11,7 @@
   #include "esp_heap_caps.h"
   #include "esp_log.h"
   #include "freertos/FreeRTOS.h"
+  #include "freertos/queue.h"
   #include "freertos/stream_buffer.h"
   #include "freertos/task.h"
 
@@ -30,18 +31,72 @@
   #define LCD_HEIGHT 320
   #define FONT_WIDTH 6
   #define FONT_HEIGHT 8
-  #define TERM_COLUMNS (LCD_WIDTH / FONT_WIDTH)
-  #define TERM_ROWS (LCD_HEIGHT / FONT_HEIGHT)
+
+  /* Static border/header frame; the scrolling log only occupies the inner text area. */
+  #define BORDER_THICKNESS 4
+  #define HEADER_HEIGHT 20
+  #define TEXT_AREA_X0 BORDER_THICKNESS
+  #define TEXT_AREA_Y0 (BORDER_THICKNESS + HEADER_HEIGHT)
+  #define TEXT_AREA_MAX_WIDTH (LCD_WIDTH - 2 * BORDER_THICKNESS)
+  #define TEXT_AREA_MAX_HEIGHT (LCD_HEIGHT - 2 * BORDER_THICKNESS - HEADER_HEIGHT)
+  #define TERM_COLUMNS (TEXT_AREA_MAX_WIDTH / FONT_WIDTH)
+  #define TERM_ROWS (TEXT_AREA_MAX_HEIGHT / FONT_HEIGHT)
+  #define TEXT_AREA_WIDTH (TERM_COLUMNS * FONT_WIDTH)
+  #define TEXT_AREA_HEIGHT (TERM_ROWS * FONT_HEIGHT)
+  #define TEXT_AREA_X1 (TEXT_AREA_X0 + TEXT_AREA_WIDTH - 1)
+  #define TEXT_AREA_Y1 (TEXT_AREA_Y0 + TEXT_AREA_HEIGHT - 1)
 
   #define COLOR_BACKGROUND 0x0000
-  #define COLOR_FOREGROUND 0xffff
+  #define COLOR_FOREGROUND 0x07e0
+  #define COLOR_ACCENT 0x0320
   #define COLOR_RED 0xf800
   #define COLOR_GREEN 0x07e0
   #define COLOR_BLUE 0x001f
+  #define COLOR_GRAY 0x39c7
+  #define COLOR_YELLOW 0xfd20
+
+  /* Layout for the "graphs" screen; drawn inside the same border/header chrome. */
+  #define GRAPH_MARGIN 8
+  #define GRAPH_X0 (BORDER_THICKNESS + GRAPH_MARGIN)
+  #define GRAPH_X1 (LCD_WIDTH - BORDER_THICKNESS - GRAPH_MARGIN - 1)
+  #define GRAPH_WIDTH (GRAPH_X1 - GRAPH_X0 + 1)
+
+  /* Structured stats line protocol (see system_monitor.py), e.g.:
+     #SYS#cpus=12.3;45.0|cputemp=61.5|ramused=8192|ramtotal=16384|ramtemp=|
+          vramused=2048|vramtotal=8192|gpuusage=33|gputemp=55#END#
+     An empty value (key=) means that metric is unavailable on the sender.
+     Anything not matching this exact wrapper (e.g. plain log text, "ping")
+     falls back to the scrolling terminal view unchanged. */
+  #define STATS_LINE_PREFIX "#SYS#"
+  #define STATS_LINE_SUFFIX "#END#"
+  #define MAX_CPU_CORES 16
+  #define MAX_DISPLAY_CORES 8
 
   static const char *TAG = "serial_tft";
   static spi_device_handle_t s_lcd;
   static StreamBufferHandle_t s_serial_stream;
+  static QueueHandle_t s_stats_queue;
+
+  typedef struct {
+    int cpu_core_count;
+    float cpu_usage[MAX_CPU_CORES];
+    bool has_cpu_temp;
+    float cpu_temp;
+    bool has_ram_used;
+    float ram_used_mb;
+    bool has_ram_total;
+    float ram_total_mb;
+    bool has_ram_temp;
+    float ram_temp;
+    bool has_vram_used;
+    float vram_used_mb;
+    bool has_vram_total;
+    float vram_total_mb;
+    bool has_gpu_usage;
+    float gpu_usage;
+    bool has_gpu_temp;
+    float gpu_temp;
+  } system_stats_t;
 
   /* 5x7 ASCII font, stored as five vertical columns per character. */
   static const uint8_t s_font[96][5] = {
@@ -177,22 +232,87 @@
     destination[2] = (color << 3) & 0xf8;
   }
 
-  static void lcd_fill_screen(uint16_t color)
+  static void lcd_fill_rect(int x0, int y0, int x1, int y1, uint16_t color)
   {
-    uint8_t *scanline = heap_caps_malloc(LCD_WIDTH * 3, MALLOC_CAP_DMA);
+    int width = x1 - x0 + 1;
+    uint8_t *scanline = heap_caps_malloc(width * 3, MALLOC_CAP_DMA);
     ESP_ERROR_CHECK(scanline == NULL ? ESP_ERR_NO_MEM : ESP_OK);
 
     uint8_t pixel[3];
     rgb565_to_rgb666(color, pixel);
-    for (int x = 0; x < LCD_WIDTH; ++x) {
+    for (int x = 0; x < width; ++x) {
       memcpy(&scanline[x * 3], pixel, sizeof(pixel));
     }
 
-    lcd_set_window(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1);
-    for (int y = 0; y < LCD_HEIGHT; ++y) {
-      lcd_send(true, scanline, LCD_WIDTH * 3);
+    lcd_set_window(x0, y0, x1, y1);
+    for (int y = y0; y <= y1; ++y) {
+      lcd_send(true, scanline, width * 3);
     }
     free(scanline);
+  }
+
+  static void lcd_fill_screen(uint16_t color)
+  {
+    lcd_fill_rect(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1, color);
+  }
+
+  static uint16_t bar_color_for_percent(float percent)
+  {
+    if (percent >= 85.0f) {
+      return COLOR_RED;
+    }
+    if (percent >= 60.0f) {
+      return COLOR_YELLOW;
+    }
+    return COLOR_GREEN;
+  }
+
+  /* Maps a Celsius reading onto a 0-100 bar scale for temperature gauges. */
+  static float temp_to_bar_percent(float celsius)
+  {
+    const float min_c = 20.0f;
+    const float max_c = 95.0f;
+    float percent = (celsius - min_c) / (max_c - min_c) * 100.0f;
+    if (percent < 0.0f) {
+      percent = 0.0f;
+    }
+    if (percent > 100.0f) {
+      percent = 100.0f;
+    }
+    return percent;
+  }
+
+  /* Horizontal meter: background track plus a proportional filled portion. */
+  static void lcd_draw_bar(int x, int y, int width, int height, float percent, uint16_t fill_color)
+  {
+    if (percent < 0.0f) {
+      percent = 0.0f;
+    }
+    if (percent > 100.0f) {
+      percent = 100.0f;
+    }
+    lcd_fill_rect(x, y, x + width - 1, y + height - 1, COLOR_GRAY);
+    int fill_width = (int)((width - 2) * percent / 100.0f);
+    if (fill_width > 0) {
+      lcd_fill_rect(x + 1, y + 1, x + fill_width, y + height - 2, fill_color);
+    }
+  }
+
+  /* Vertical meter that fills from the bottom up, used for the per-core CPU bars. */
+  static void lcd_draw_vbar(int x, int y_top, int width, int height, float percent, uint16_t fill_color)
+  {
+    if (percent < 0.0f) {
+      percent = 0.0f;
+    }
+    if (percent > 100.0f) {
+      percent = 100.0f;
+    }
+    lcd_fill_rect(x, y_top, x + width - 1, y_top + height - 1, COLOR_GRAY);
+    int fill_height = (int)((height - 2) * percent / 100.0f);
+    if (fill_height > 0) {
+      int fill_y0 = y_top + height - 1 - fill_height;
+      lcd_fill_rect(x + 1, fill_y0, x + width - 2, y_top + height - 2, fill_color);
+    }
   }
 
   static void lcd_self_test(void)
@@ -209,9 +329,163 @@
     lcd_fill_screen(COLOR_BACKGROUND);
   }
 
+  static void lcd_draw_char(int x, int y, char ch, uint16_t fg_color, uint16_t bg_color)
+  {
+    uint8_t fg[3];
+    uint8_t bg[3];
+    rgb565_to_rgb666(fg_color, fg);
+    rgb565_to_rgb666(bg_color, bg);
+
+    unsigned char glyph_index = (unsigned char)ch;
+    if (glyph_index < 32 || glyph_index > 127) {
+      glyph_index = '?';
+    }
+
+    uint8_t glyph[FONT_WIDTH * FONT_HEIGHT * 3];
+    for (int row = 0; row < FONT_HEIGHT; ++row) {
+      for (int col = 0; col < FONT_WIDTH; ++col) {
+        bool pixel_set = col < 5 && row < 7 && (s_font[glyph_index - 32][col] & (1U << row));
+        memcpy(&glyph[(row * FONT_WIDTH + col) * 3], pixel_set ? fg : bg, 3);
+      }
+    }
+
+    lcd_set_window(x, y, x + FONT_WIDTH - 1, y + FONT_HEIGHT - 1);
+    lcd_send(true, glyph, sizeof(glyph));
+  }
+
+  static void lcd_draw_text(int x, int y, const char *text, uint16_t fg_color, uint16_t bg_color)
+  {
+    for (int i = 0; text[i] != '\0'; ++i) {
+      lcd_draw_char(x + i * FONT_WIDTH, y, text[i], fg_color, bg_color);
+    }
+  }
+
+  /* Draws the static border/header once; scrolling log updates only repaint the text area. */
+  static void lcd_draw_chrome_titled(const char *title)
+  {
+    lcd_fill_rect(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1, COLOR_ACCENT);
+    lcd_fill_rect(BORDER_THICKNESS, BORDER_THICKNESS + HEADER_HEIGHT,
+                  LCD_WIDTH - BORDER_THICKNESS - 1, LCD_HEIGHT - BORDER_THICKNESS - 1,
+                  COLOR_BACKGROUND);
+
+    int title_width = (int)strlen(title) * FONT_WIDTH;
+    int title_x = BORDER_THICKNESS + ((LCD_WIDTH - 2 * BORDER_THICKNESS) - title_width) / 2;
+    int title_y = BORDER_THICKNESS + (HEADER_HEIGHT - FONT_HEIGHT) / 2;
+    lcd_draw_text(title_x, title_y, title, COLOR_BACKGROUND, COLOR_ACCENT);
+  }
+
+  static void lcd_draw_chrome(void)
+  {
+    lcd_draw_chrome_titled("LINUX SERIAL MONITOR");
+  }
+
+  /* Redraws the fixed-height row of per-core vertical bars plus their percentage labels. */
+  static void draw_cpu_cores(const system_stats_t *stats)
+  {
+    const int label_y = GRAPH_MARGIN + HEADER_HEIGHT + BORDER_THICKNESS;
+    const int bars_top = label_y + FONT_HEIGHT + 2;
+    const int bars_height = 40;
+    const int values_y = bars_top + bars_height + 2;
+
+    lcd_fill_rect(GRAPH_X0, label_y, GRAPH_X1, values_y + FONT_HEIGHT - 1, COLOR_BACKGROUND);
+
+    int shown = stats->cpu_core_count;
+    if (shown > MAX_DISPLAY_CORES) {
+      shown = MAX_DISPLAY_CORES;
+    }
+
+    char header[48];
+    if (stats->cpu_core_count > 0) {
+      float sum = 0.0f;
+      for (int i = 0; i < stats->cpu_core_count; ++i) {
+        sum += stats->cpu_usage[i];
+      }
+      snprintf(header, sizeof(header), "CPU CORES (avg %.0f%%, %d total)",
+               sum / stats->cpu_core_count, stats->cpu_core_count);
+    } else {
+      snprintf(header, sizeof(header), "CPU CORES (no data)");
+    }
+    lcd_draw_text(GRAPH_X0, label_y, header, COLOR_FOREGROUND, COLOR_BACKGROUND);
+
+    if (shown <= 0) {
+      return;
+    }
+
+    int slot_width = GRAPH_WIDTH / shown;
+    int bar_width = slot_width - 4;
+    for (int i = 0; i < shown; ++i) {
+      int x = GRAPH_X0 + i * slot_width + 2;
+      float usage = stats->cpu_usage[i];
+      lcd_draw_vbar(x, bars_top, bar_width, bars_height, usage, bar_color_for_percent(usage));
+
+      char value[8];
+      snprintf(value, sizeof(value), "%3.0f", usage);
+      int text_x = GRAPH_X0 + i * slot_width + (slot_width - 3 * FONT_WIDTH) / 2;
+      lcd_draw_text(text_x, values_y, value, COLOR_FOREGROUND, COLOR_BACKGROUND);
+    }
+  }
+
+  /* One "label: value" text line followed by a proportional bar underneath. */
+  static void draw_metric_row(int y, const char *label, const char *value_text, float percent, bool valid)
+  {
+    char line[64];
+    if (valid) {
+      snprintf(line, sizeof(line), "%s: %s", label, value_text);
+    } else {
+      snprintf(line, sizeof(line), "%s: N/A", label);
+    }
+    lcd_fill_rect(GRAPH_X0, y, GRAPH_X1, y + FONT_HEIGHT - 1, COLOR_BACKGROUND);
+    lcd_draw_text(GRAPH_X0, y, line, COLOR_FOREGROUND, COLOR_BACKGROUND);
+
+    int bar_y = y + FONT_HEIGHT + 2;
+    int bar_height = 10;
+    float bar_percent = valid ? percent : 0.0f;
+    uint16_t color = valid ? bar_color_for_percent(bar_percent) : COLOR_GRAY;
+    lcd_draw_bar(GRAPH_X0, bar_y, GRAPH_WIDTH, bar_height, bar_percent, color);
+  }
+
+  /* Renders the full "graphs" screen for a system_stats_t sample. */
+  static void render_stats_graphs(const system_stats_t *stats)
+  {
+    draw_cpu_cores(stats);
+
+    int y = GRAPH_MARGIN + HEADER_HEIGHT + BORDER_THICKNESS + 68;
+    const int row_height = 26;
+    char value_text[48];
+
+    snprintf(value_text, sizeof(value_text), "%.1f C", stats->cpu_temp);
+    draw_metric_row(y, "CPU TEMP", value_text, temp_to_bar_percent(stats->cpu_temp), stats->has_cpu_temp);
+    y += row_height;
+
+    bool ram_valid = stats->has_ram_used && stats->has_ram_total && stats->ram_total_mb > 0.0f;
+    float ram_percent = ram_valid ? (stats->ram_used_mb / stats->ram_total_mb * 100.0f) : 0.0f;
+    snprintf(value_text, sizeof(value_text), "%.0f/%.0f MB (%.0f%%)",
+             stats->ram_used_mb, stats->ram_total_mb, ram_percent);
+    draw_metric_row(y, "RAM", value_text, ram_percent, ram_valid);
+    y += row_height;
+
+    snprintf(value_text, sizeof(value_text), "%.1f C", stats->ram_temp);
+    draw_metric_row(y, "RAM TEMP", value_text, temp_to_bar_percent(stats->ram_temp), stats->has_ram_temp);
+    y += row_height;
+
+    bool vram_valid = stats->has_vram_used && stats->has_vram_total && stats->vram_total_mb > 0.0f;
+    float vram_percent = vram_valid ? (stats->vram_used_mb / stats->vram_total_mb * 100.0f) : 0.0f;
+    snprintf(value_text, sizeof(value_text), "%.0f/%.0f MB (%.0f%%)",
+             stats->vram_used_mb, stats->vram_total_mb, vram_percent);
+    draw_metric_row(y, "VRAM", value_text, vram_percent, vram_valid);
+    y += row_height;
+
+    snprintf(value_text, sizeof(value_text), "%.0f%%", stats->gpu_usage);
+    draw_metric_row(y, "GPU USAGE", value_text, stats->gpu_usage, stats->has_gpu_usage);
+    y += row_height;
+
+    snprintf(value_text, sizeof(value_text), "%.1f C", stats->gpu_temp);
+    draw_metric_row(y, "GPU TEMP", value_text, temp_to_bar_percent(stats->gpu_temp), stats->has_gpu_temp);
+  }
+
   static void render_terminal(const char screen[TERM_ROWS][TERM_COLUMNS])
   {
-    uint8_t *scanline = heap_caps_malloc(LCD_WIDTH * 3, MALLOC_CAP_DMA);
+    uint8_t *scanline = heap_caps_malloc(TEXT_AREA_WIDTH * 3, MALLOC_CAP_DMA);
     if (scanline == NULL) {
       ESP_LOGE(TAG, "Unable to allocate display scanline");
       return;
@@ -222,11 +496,11 @@
     rgb565_to_rgb666(COLOR_FOREGROUND, foreground);
     rgb565_to_rgb666(COLOR_BACKGROUND, background);
 
-    lcd_set_window(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1);
-    for (int y = 0; y < LCD_HEIGHT; ++y) {
+    lcd_set_window(TEXT_AREA_X0, TEXT_AREA_Y0, TEXT_AREA_X1, TEXT_AREA_Y1);
+    for (int y = 0; y < TEXT_AREA_HEIGHT; ++y) {
       int text_row = y / FONT_HEIGHT;
       int glyph_row = y % FONT_HEIGHT;
-      for (int x = 0; x < LCD_WIDTH; ++x) {
+      for (int x = 0; x < TEXT_AREA_WIDTH; ++x) {
         int text_column = x / FONT_WIDTH;
         int glyph_column = x % FONT_WIDTH;
         unsigned char character = screen[text_row][text_column];
@@ -237,7 +511,7 @@
                  (s_font[character - 32][glyph_column] & (1U << glyph_row));
         memcpy(&scanline[x * 3], pixel_set ? foreground : background, 3);
       }
-      lcd_send(true, scanline, LCD_WIDTH * 3);
+      lcd_send(true, scanline, TEXT_AREA_WIDTH * 3);
     }
     free(scanline);
   }
@@ -300,6 +574,7 @@
     int row = 0;
     int column = 0;
     uint8_t escape_state = 0;
+    bool graphs_mode = false;
     memset(screen, ' ', sizeof(screen));
 
     const char banner[] = "Serial console ready - UART2 115200 8N1";
@@ -310,7 +585,29 @@
     render_terminal(screen);
 
     while (true) {
-      size_t received = xStreamBufferReceive(s_serial_stream, input, sizeof(input), portMAX_DELAY);
+      system_stats_t stats;
+      if (xQueueReceive(s_stats_queue, &stats, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (!graphs_mode) {
+          graphs_mode = true;
+          lcd_draw_chrome_titled("SYSTEM MONITOR");
+        }
+        render_stats_graphs(&stats);
+        continue;
+      }
+
+      size_t received = xStreamBufferReceive(s_serial_stream, input, sizeof(input), 0);
+      if (received == 0) {
+        continue;
+      }
+      if (graphs_mode) {
+        /* A regular text line arrived (e.g. "ping"): fall back to the scrolling terminal view. */
+        graphs_mode = false;
+        lcd_draw_chrome();
+        memset(screen, ' ', sizeof(screen));
+        row = 0;
+        column = 0;
+        escape_state = 0;
+      }
       do {
         for (size_t i = 0; i < received; ++i) {
           terminal_put(screen, &row, &column, &escape_state, input[i]);
@@ -336,10 +633,115 @@
     }
   }
 
+  static bool parse_float_token(const char *value, float *out)
+  {
+    if (value == NULL || value[0] == '\0') {
+      return false;
+    }
+    char *end = NULL;
+    float parsed = strtof(value, &end);
+    if (end == value) {
+      return false;
+    }
+    *out = parsed;
+    return true;
+  }
+
+  /* Parses one "#SYS#...#END#" line into a system_stats_t. Returns false for anything else. */
+  static bool parse_stats_line(const char *line, size_t length, system_stats_t *stats)
+  {
+    size_t prefix_len = strlen(STATS_LINE_PREFIX);
+    size_t suffix_len = strlen(STATS_LINE_SUFFIX);
+    if (length < prefix_len + suffix_len ||
+        memcmp(line, STATS_LINE_PREFIX, prefix_len) != 0 ||
+        memcmp(line + length - suffix_len, STATS_LINE_SUFFIX, suffix_len) != 0) {
+      return false;
+    }
+
+    size_t body_len = length - prefix_len - suffix_len;
+    char body[400];
+    if (body_len >= sizeof(body)) {
+      return false;
+    }
+    memcpy(body, line + prefix_len, body_len);
+    body[body_len] = '\0';
+
+    memset(stats, 0, sizeof(*stats));
+
+    char *field_state = NULL;
+    char *field = strtok_r(body, "|", &field_state);
+    while (field != NULL) {
+      char *equals = strchr(field, '=');
+      if (equals != NULL) {
+        *equals = '\0';
+        const char *key = field;
+        const char *value = equals + 1;
+
+        if (strcmp(key, "cpus") == 0) {
+          char *cpu_state = NULL;
+          char *cpu_token = strtok_r((char *)value, ";", &cpu_state);
+          while (cpu_token != NULL && stats->cpu_core_count < MAX_CPU_CORES) {
+            float usage;
+            if (parse_float_token(cpu_token, &usage)) {
+              stats->cpu_usage[stats->cpu_core_count++] = usage;
+            }
+            cpu_token = strtok_r(NULL, ";", &cpu_state);
+          }
+        } else if (strcmp(key, "cputemp") == 0) {
+          stats->has_cpu_temp = parse_float_token(value, &stats->cpu_temp);
+        } else if (strcmp(key, "ramused") == 0) {
+          stats->has_ram_used = parse_float_token(value, &stats->ram_used_mb);
+        } else if (strcmp(key, "ramtotal") == 0) {
+          stats->has_ram_total = parse_float_token(value, &stats->ram_total_mb);
+        } else if (strcmp(key, "ramtemp") == 0) {
+          stats->has_ram_temp = parse_float_token(value, &stats->ram_temp);
+        } else if (strcmp(key, "vramused") == 0) {
+          stats->has_vram_used = parse_float_token(value, &stats->vram_used_mb);
+        } else if (strcmp(key, "vramtotal") == 0) {
+          stats->has_vram_total = parse_float_token(value, &stats->vram_total_mb);
+        } else if (strcmp(key, "gpuusage") == 0) {
+          stats->has_gpu_usage = parse_float_token(value, &stats->gpu_usage);
+        } else if (strcmp(key, "gputemp") == 0) {
+          stats->has_gpu_temp = parse_float_token(value, &stats->gpu_temp);
+        }
+      }
+      field = strtok_r(NULL, "|", &field_state);
+    }
+    return true;
+  }
+
+  /* Routes one complete line (without the trailing \n) to either the stats queue or the terminal stream. */
+  static void process_line(const uint8_t *line, size_t length)
+  {
+    size_t trimmed_length = length;
+    if (trimmed_length > 0 && line[trimmed_length - 1] == '\r') {
+      --trimmed_length;
+    }
+
+    system_stats_t stats;
+    if (parse_stats_line((const char *)line, trimmed_length, &stats)) {
+      if (xQueueSend(s_stats_queue, &stats, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Stats queue full, dropping update");
+      }
+      return;
+    }
+
+    if (length > 0) {
+      size_t sent = xStreamBufferSend(s_serial_stream, line, length, portMAX_DELAY);
+      if (sent != length) {
+        ESP_LOGW(TAG, "Serial stream overflow");
+      }
+    }
+    uint8_t newline = '\n';
+    xStreamBufferSend(s_serial_stream, &newline, 1, portMAX_DELAY);
+  }
+
   static void uart_receive_task(void *argument)
   {
     (void)argument;
     uint8_t input[256];
+    static uint8_t line_buffer[512];
+    size_t line_length = 0;
     TickType_t last_activity = xTaskGetTickCount();
     while (true) {
       int length = uart_read_bytes(SERIAL_PORT, input, sizeof(input), pdMS_TO_TICKS(2000));
@@ -348,9 +750,20 @@
         ESP_LOGI(TAG, "UART2 RX %d byte(s)", length);
         log_rx_hex(input, length);
         last_activity = xTaskGetTickCount();
-        size_t sent = xStreamBufferSend(s_serial_stream, input, (size_t)length, portMAX_DELAY);
-        if (sent != (size_t)length) {
-          ESP_LOGW(TAG, "Serial stream overflow");
+        for (int i = 0; i < length; ++i) {
+          uint8_t byte = input[i];
+          if (byte == '\n') {
+            process_line(line_buffer, line_length);
+            line_length = 0;
+            continue;
+          }
+          if (line_length < sizeof(line_buffer)) {
+            line_buffer[line_length++] = byte;
+          } else {
+            /* Line too long for the buffer (and definitely not a stats line): flush as text. */
+            process_line(line_buffer, line_length);
+            line_length = 0;
+          }
         }
       } else if (xTaskGetTickCount() - last_activity > pdMS_TO_TICKS(5000)) {
         ESP_LOGW(TAG, "UART2 idle: 0 bytes in the last 5s. Check GND common with the "
@@ -401,9 +814,15 @@
     lcd_initialize();
         ESP_LOGI(TAG, "ILI9488 initialized at 20 MHz");
         lcd_self_test();
+        lcd_draw_chrome();
     s_serial_stream = xStreamBufferCreate(4096, 1);
     if (s_serial_stream == NULL) {
       ESP_LOGE(TAG, "Unable to allocate serial stream buffer");
+      return;
+    }
+    s_stats_queue = xQueueCreate(4, sizeof(system_stats_t));
+    if (s_stats_queue == NULL) {
+      ESP_LOGE(TAG, "Unable to allocate stats queue");
       return;
     }
 
