@@ -80,6 +80,31 @@ If access is denied, add your Linux account to the serial-port group (often
 `dialout`) and sign out and back in. Avoid running an interactive serial
 monitor on the USB-TTL port while redirecting data to it.
 
+## System monitor graphs
+
+`system_monitor.py` reads CPU per-core usage, CPU temperature, RAM usage,
+RAM temperature (if exposed by a sensor), and NVIDIA VRAM/GPU usage/temperature,
+then streams one stats line per interval to the ESP32 over the same serial
+port used above. The firmware detects these lines automatically and switches
+the screen to bar-graph gauges with labels and numeric values; sending plain
+text (like `ping` output or `journalctl -f`) switches it back to the scrolling
+terminal view.
+
+```bash
+pip install psutil pyserial
+stty -F /dev/ttyUSB0 115200 cs8 -cstopb -parenb raw -echo
+python3 system_monitor.py --port /dev/ttyUSB0 --interval 1
+```
+
+Metrics that can't be read on a given machine (e.g. RAM temperature, or GPU
+stats without an NVIDIA card) are sent as empty values and shown as `N/A`.
+
+Wire format, one ASCII line terminated by `\n`:
+
+```text
+#SYS#cpus=12.3;45.0;10.0;99.9|cputemp=61.5|ramused=8192|ramtotal=16384|ramtemp=|vramused=2048|vramtotal=8192|gpuusage=33|gputemp=55#END#
+```
+
 ## Display troubleshooting
 
 The program uses an ILI9488 initialization sequence and 18-bit SPI pixel data.
