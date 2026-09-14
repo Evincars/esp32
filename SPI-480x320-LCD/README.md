@@ -83,12 +83,13 @@ monitor on the USB-TTL port while redirecting data to it.
 ## System monitor graphs
 
 `system_monitor.py` reads CPU per-core usage, CPU temperature, RAM usage,
-RAM temperature (if exposed by a sensor), and NVIDIA VRAM/GPU usage/temperature,
-then streams one stats line per interval to the ESP32 over the same serial
-port used above. The firmware detects these lines automatically and switches
-the screen to bar-graph gauges with labels and numeric values; sending plain
-text (like `ping` output or `journalctl -f`) switches it back to the scrolling
-terminal view.
+NVIDIA VRAM/GPU usage/temperature, network upload/download rates, and
+process/thread counts, then streams one stats line per interval to the ESP32
+over the same serial port used above. The firmware detects these lines
+automatically and renders a CPU core list (index, usage%, and thread count)
+on the left with the rest of the metrics as bar graphs on the right, each
+metric in its own green-shade color; sending plain text (like `ping` output
+or `journalctl -f`) switches it back to the scrolling terminal view.
 
 ```bash
 pip install psutil pyserial
@@ -96,13 +97,14 @@ stty -F /dev/ttyUSB0 115200 cs8 -cstopb -parenb raw -echo
 python3 system_monitor.py --port /dev/ttyUSB0 --interval 1
 ```
 
-Metrics that can't be read on a given machine (e.g. RAM temperature, or GPU
-stats without an NVIDIA card) are sent as empty values and shown as `N/A`.
+Metrics that can't be read on a given machine (e.g. GPU stats without an
+NVIDIA card, or per-core thread counts outside Linux) are sent as empty
+values and shown as `N/A`.
 
 Wire format, one ASCII line terminated by `\n`:
 
 ```text
-#SYS#cpus=12.3;45.0;10.0;99.9|cputemp=61.5|ramused=8192|ramtotal=16384|ramtemp=|vramused=2048|vramtotal=8192|gpuusage=33|gputemp=55#END#
+#SYS#cpus=12.3;45.0;10.0;99.9|cputemp=61.5|ramused=8192|ramtotal=16384|vramused=2048|vramtotal=8192|gpuusage=33|gputemp=55|netup=120.5|netdown=980.2|procs=312|threads=1904|corethreads=3;2;4;1#END#
 ```
 
 ## Display troubleshooting

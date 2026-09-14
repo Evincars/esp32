@@ -53,24 +53,42 @@
   #define COLOR_GREEN 0x07e0
   #define COLOR_BLUE 0x001f
   #define COLOR_GRAY 0x39c7
-  #define COLOR_YELLOW 0xfd20
+
+  #define RGB565(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
+
+  /* Distinct green-family shades, one per graph metric (no red/amber severity colors). */
+  #define COLOR_CPU_CORE RGB565(60, 220, 90)
+  #define COLOR_CPU_TEMP RGB565(40, 180, 140)
+  #define COLOR_RAM RGB565(120, 200, 60)
+  #define COLOR_VRAM RGB565(30, 170, 120)
+  #define COLOR_GPU_USAGE RGB565(90, 230, 150)
+  #define COLOR_GPU_TEMP RGB565(20, 150, 100)
+  #define COLOR_NET_UP RGB565(150, 220, 80)
+  #define COLOR_NET_DOWN RGB565(50, 190, 170)
 
   /* Layout for the "graphs" screen; drawn inside the same border/header chrome. */
   #define GRAPH_MARGIN 8
   #define GRAPH_X0 (BORDER_THICKNESS + GRAPH_MARGIN)
   #define GRAPH_X1 (LCD_WIDTH - BORDER_THICKNESS - GRAPH_MARGIN - 1)
   #define GRAPH_WIDTH (GRAPH_X1 - GRAPH_X0 + 1)
+  #define GRAPH_Y0 (BORDER_THICKNESS + HEADER_HEIGHT + GRAPH_MARGIN)
+
+  /* Left column: one row per CPU core (index, usage%, optional thread count, mini bar). */
+  #define CORE_LIST_WIDTH 108
+  #define CORE_ROW_HEIGHT 17
+  #define CORE_BAR_HEIGHT 4
+  #define RIGHT_PANEL_X0 (GRAPH_X0 + CORE_LIST_WIDTH + 10)
 
   /* Structured stats line protocol (see system_monitor.py), e.g.:
-     #SYS#cpus=12.3;45.0|cputemp=61.5|ramused=8192|ramtotal=16384|ramtemp=|
-          vramused=2048|vramtotal=8192|gpuusage=33|gputemp=55#END#
+     #SYS#cpus=12.3;45.0|cputemp=61.5|ramused=8192|ramtotal=16384|
+          vramused=2048|vramtotal=8192|gpuusage=33|gputemp=55|
+          netup=120.5|netdown=980.2|procs=312|threads=1904|corethreads=3;2;4;1#END#
      An empty value (key=) means that metric is unavailable on the sender.
      Anything not matching this exact wrapper (e.g. plain log text, "ping")
      falls back to the scrolling terminal view unchanged. */
   #define STATS_LINE_PREFIX "#SYS#"
   #define STATS_LINE_SUFFIX "#END#"
   #define MAX_CPU_CORES 16
-  #define MAX_DISPLAY_CORES 8
 
   static const char *TAG = "serial_tft";
   static spi_device_handle_t s_lcd;
@@ -80,14 +98,14 @@
   typedef struct {
     int cpu_core_count;
     float cpu_usage[MAX_CPU_CORES];
+    int core_thread_count[MAX_CPU_CORES];
+    int core_thread_data_count;
     bool has_cpu_temp;
     float cpu_temp;
     bool has_ram_used;
     float ram_used_mb;
     bool has_ram_total;
     float ram_total_mb;
-    bool has_ram_temp;
-    float ram_temp;
     bool has_vram_used;
     float vram_used_mb;
     bool has_vram_total;
@@ -96,7 +114,16 @@
     float gpu_usage;
     bool has_gpu_temp;
     float gpu_temp;
+    bool has_net_up;
+    float net_up_kbps;
+    bool has_net_down;
+    float net_down_kbps;
+    bool has_procs;
+    int procs;
+    bool has_threads;
+    int threads_total;
   } system_stats_t;
+
 
   /* 5x7 ASCII font, stored as five vertical columns per character. */
   static const uint8_t s_font[96][5] = {
@@ -256,15 +283,21 @@
     lcd_fill_rect(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1, color);
   }
 
-  static uint16_t bar_color_for_percent(float percent)
+  /* Scales a base color's brightness by percent (0-100) so bars glow brighter under load,
+     without ever changing hue away from the metric's assigned green shade. */
+  static uint16_t metric_color(uint16_t base_color, float percent)
   {
-    if (percent >= 85.0f) {
-      return COLOR_RED;
+    if (percent < 0.0f) {
+      percent = 0.0f;
     }
-    if (percent >= 60.0f) {
-      return COLOR_YELLOW;
+    if (percent > 100.0f) {
+      percent = 100.0f;
     }
-    return COLOR_GREEN;
+    float factor = 0.35f + 0.65f * (percent / 100.0f);
+    uint8_t r = (uint8_t)(((base_color >> 11) & 0x1f) * factor);
+    uint8_t g = (uint8_t)(((base_color >> 5) & 0x3f) * factor);
+    uint8_t b = (uint8_t)((base_color & 0x1f) * factor);
+    return (uint16_t)((r << 11) | (g << 5) | b);
   }
 
   /* Maps a Celsius reading onto a 0-100 bar scale for temperature gauges. */
@@ -295,23 +328,6 @@
     int fill_width = (int)((width - 2) * percent / 100.0f);
     if (fill_width > 0) {
       lcd_fill_rect(x + 1, y + 1, x + fill_width, y + height - 2, fill_color);
-    }
-  }
-
-  /* Vertical meter that fills from the bottom up, used for the per-core CPU bars. */
-  static void lcd_draw_vbar(int x, int y_top, int width, int height, float percent, uint16_t fill_color)
-  {
-    if (percent < 0.0f) {
-      percent = 0.0f;
-    }
-    if (percent > 100.0f) {
-      percent = 100.0f;
-    }
-    lcd_fill_rect(x, y_top, x + width - 1, y_top + height - 1, COLOR_GRAY);
-    int fill_height = (int)((height - 2) * percent / 100.0f);
-    if (fill_height > 0) {
-      int fill_y0 = y_top + height - 1 - fill_height;
-      lcd_fill_rect(x + 1, fill_y0, x + width - 2, y_top + height - 2, fill_color);
     }
   }
 
@@ -379,54 +395,39 @@
     lcd_draw_chrome_titled("LINUX SERIAL MONITOR");
   }
 
-  /* Redraws the fixed-height row of per-core vertical bars plus their percentage labels. */
-  static void draw_cpu_cores(const system_stats_t *stats)
+  /* Left column: one compact row per CPU core - "C<index> <usage%> <threads>t" plus a mini bar.
+     Showing the core index alongside the percentage avoids the ambiguous bare numbers. */
+  static void draw_cpu_core_rows(const system_stats_t *stats)
   {
-    const int label_y = GRAPH_MARGIN + HEADER_HEIGHT + BORDER_THICKNESS;
-    const int bars_top = label_y + FONT_HEIGHT + 2;
-    const int bars_height = 40;
-    const int values_y = bars_top + bars_height + 2;
-
-    lcd_fill_rect(GRAPH_X0, label_y, GRAPH_X1, values_y + FONT_HEIGHT - 1, COLOR_BACKGROUND);
-
-    int shown = stats->cpu_core_count;
-    if (shown > MAX_DISPLAY_CORES) {
-      shown = MAX_DISPLAY_CORES;
+    int count = stats->cpu_core_count;
+    if (count > MAX_CPU_CORES) {
+      count = MAX_CPU_CORES;
     }
 
-    char header[48];
-    if (stats->cpu_core_count > 0) {
-      float sum = 0.0f;
-      for (int i = 0; i < stats->cpu_core_count; ++i) {
-        sum += stats->cpu_usage[i];
-      }
-      snprintf(header, sizeof(header), "CPU CORES (avg %.0f%%, %d total)",
-               sum / stats->cpu_core_count, stats->cpu_core_count);
-    } else {
-      snprintf(header, sizeof(header), "CPU CORES (no data)");
-    }
-    lcd_draw_text(GRAPH_X0, label_y, header, COLOR_FOREGROUND, COLOR_BACKGROUND);
+    lcd_fill_rect(GRAPH_X0, GRAPH_Y0, GRAPH_X0 + CORE_LIST_WIDTH - 1,
+                  GRAPH_Y0 + MAX_CPU_CORES * CORE_ROW_HEIGHT - 1, COLOR_BACKGROUND);
 
-    if (shown <= 0) {
-      return;
-    }
-
-    int slot_width = GRAPH_WIDTH / shown;
-    int bar_width = slot_width - 4;
-    for (int i = 0; i < shown; ++i) {
-      int x = GRAPH_X0 + i * slot_width + 2;
+    for (int i = 0; i < count; ++i) {
+      int row_y = GRAPH_Y0 + i * CORE_ROW_HEIGHT;
       float usage = stats->cpu_usage[i];
-      lcd_draw_vbar(x, bars_top, bar_width, bars_height, usage, bar_color_for_percent(usage));
 
-      char value[8];
-      snprintf(value, sizeof(value), "%3.0f", usage);
-      int text_x = GRAPH_X0 + i * slot_width + (slot_width - 3 * FONT_WIDTH) / 2;
-      lcd_draw_text(text_x, values_y, value, COLOR_FOREGROUND, COLOR_BACKGROUND);
+      char line[24];
+      if (i < stats->core_thread_data_count) {
+        snprintf(line, sizeof(line), "C%-2d%3.0f%%%3dt", i, usage, stats->core_thread_count[i]);
+      } else {
+        snprintf(line, sizeof(line), "C%-2d%3.0f%%", i, usage);
+      }
+      lcd_draw_text(GRAPH_X0, row_y, line, COLOR_FOREGROUND, COLOR_BACKGROUND);
+
+      int bar_y = row_y + FONT_HEIGHT + 1;
+      lcd_draw_bar(GRAPH_X0, bar_y, CORE_LIST_WIDTH - 4, CORE_BAR_HEIGHT, usage,
+                   metric_color(COLOR_CPU_CORE, usage));
     }
   }
 
-  /* One "label: value" text line followed by a proportional bar underneath. */
-  static void draw_metric_row(int y, const char *label, const char *value_text, float percent, bool valid)
+  /* One "label: value" text line followed by a proportional bar underneath, within [x0, x1]. */
+  static void draw_metric_row(int x0, int x1, int y, const char *label, const char *value_text,
+                               float percent, bool valid, uint16_t color)
   {
     char line[64];
     if (valid) {
@@ -434,54 +435,99 @@
     } else {
       snprintf(line, sizeof(line), "%s: N/A", label);
     }
-    lcd_fill_rect(GRAPH_X0, y, GRAPH_X1, y + FONT_HEIGHT - 1, COLOR_BACKGROUND);
-    lcd_draw_text(GRAPH_X0, y, line, COLOR_FOREGROUND, COLOR_BACKGROUND);
+    lcd_fill_rect(x0, y, x1, y + FONT_HEIGHT - 1, COLOR_BACKGROUND);
+    lcd_draw_text(x0, y, line, COLOR_FOREGROUND, COLOR_BACKGROUND);
 
     int bar_y = y + FONT_HEIGHT + 2;
     int bar_height = 10;
     float bar_percent = valid ? percent : 0.0f;
-    uint16_t color = valid ? bar_color_for_percent(bar_percent) : COLOR_GRAY;
-    lcd_draw_bar(GRAPH_X0, bar_y, GRAPH_WIDTH, bar_height, bar_percent, color);
+    uint16_t fill_color = valid ? metric_color(color, bar_percent) : COLOR_GRAY;
+    lcd_draw_bar(x0, bar_y, x1 - x0 + 1, bar_height, bar_percent, fill_color);
   }
 
-  /* Renders the full "graphs" screen for a system_stats_t sample. */
+  /* Plain text line with no bar, used for the processes/threads summary. */
+  static void draw_text_row(int x0, int x1, int y, const char *text)
+  {
+    lcd_fill_rect(x0, y, x1, y + FONT_HEIGHT - 1, COLOR_BACKGROUND);
+    lcd_draw_text(x0, y, text, COLOR_FOREGROUND, COLOR_BACKGROUND);
+  }
+
+  /* Formats a KB/s rate, switching to MB/s once it gets large. */
+  static void format_rate(float kbps, char *out, size_t out_size)
+  {
+    if (kbps >= 1024.0f) {
+      snprintf(out, out_size, "%.2f MB/s", kbps / 1024.0f);
+    } else {
+      snprintf(out, out_size, "%.0f KB/s", kbps);
+    }
+  }
+
+  /* Renders the full "graphs" screen for a system_stats_t sample: CPU core list on the
+     left, every other metric stacked on the right. */
   static void render_stats_graphs(const system_stats_t *stats)
   {
-    draw_cpu_cores(stats);
+    draw_cpu_core_rows(stats);
 
-    int y = GRAPH_MARGIN + HEADER_HEIGHT + BORDER_THICKNESS + 68;
+    const int x0 = RIGHT_PANEL_X0;
+    const int x1 = GRAPH_X1;
+    int y = GRAPH_Y0;
     const int row_height = 26;
     char value_text[48];
 
     snprintf(value_text, sizeof(value_text), "%.1f C", stats->cpu_temp);
-    draw_metric_row(y, "CPU TEMP", value_text, temp_to_bar_percent(stats->cpu_temp), stats->has_cpu_temp);
+    draw_metric_row(x0, x1, y, "CPU TEMP", value_text, temp_to_bar_percent(stats->cpu_temp),
+                     stats->has_cpu_temp, COLOR_CPU_TEMP);
     y += row_height;
 
     bool ram_valid = stats->has_ram_used && stats->has_ram_total && stats->ram_total_mb > 0.0f;
     float ram_percent = ram_valid ? (stats->ram_used_mb / stats->ram_total_mb * 100.0f) : 0.0f;
     snprintf(value_text, sizeof(value_text), "%.0f/%.0f MB (%.0f%%)",
              stats->ram_used_mb, stats->ram_total_mb, ram_percent);
-    draw_metric_row(y, "RAM", value_text, ram_percent, ram_valid);
-    y += row_height;
-
-    snprintf(value_text, sizeof(value_text), "%.1f C", stats->ram_temp);
-    draw_metric_row(y, "RAM TEMP", value_text, temp_to_bar_percent(stats->ram_temp), stats->has_ram_temp);
+    draw_metric_row(x0, x1, y, "RAM", value_text, ram_percent, ram_valid, COLOR_RAM);
     y += row_height;
 
     bool vram_valid = stats->has_vram_used && stats->has_vram_total && stats->vram_total_mb > 0.0f;
     float vram_percent = vram_valid ? (stats->vram_used_mb / stats->vram_total_mb * 100.0f) : 0.0f;
     snprintf(value_text, sizeof(value_text), "%.0f/%.0f MB (%.0f%%)",
              stats->vram_used_mb, stats->vram_total_mb, vram_percent);
-    draw_metric_row(y, "VRAM", value_text, vram_percent, vram_valid);
+    draw_metric_row(x0, x1, y, "VRAM", value_text, vram_percent, vram_valid, COLOR_VRAM);
     y += row_height;
 
     snprintf(value_text, sizeof(value_text), "%.0f%%", stats->gpu_usage);
-    draw_metric_row(y, "GPU USAGE", value_text, stats->gpu_usage, stats->has_gpu_usage);
+    draw_metric_row(x0, x1, y, "GPU USAGE", value_text, stats->gpu_usage, stats->has_gpu_usage,
+                     COLOR_GPU_USAGE);
     y += row_height;
 
     snprintf(value_text, sizeof(value_text), "%.1f C", stats->gpu_temp);
-    draw_metric_row(y, "GPU TEMP", value_text, temp_to_bar_percent(stats->gpu_temp), stats->has_gpu_temp);
+    draw_metric_row(x0, x1, y, "GPU TEMP", value_text, temp_to_bar_percent(stats->gpu_temp),
+                     stats->has_gpu_temp, COLOR_GPU_TEMP);
+    y += row_height;
+
+    /* Network rates have no natural 0-100 scale; bar-fill is relative to this reference speed. */
+    const float net_bar_reference_kbps = 12500.0f; /* ~100 Mbit/s */
+
+    char rate_text[24];
+    format_rate(stats->net_up_kbps, rate_text, sizeof(rate_text));
+    float net_up_percent = stats->net_up_kbps / net_bar_reference_kbps * 100.0f;
+    draw_metric_row(x0, x1, y, "NET UP", rate_text, net_up_percent, stats->has_net_up, COLOR_NET_UP);
+    y += row_height;
+
+    format_rate(stats->net_down_kbps, rate_text, sizeof(rate_text));
+    float net_down_percent = stats->net_down_kbps / net_bar_reference_kbps * 100.0f;
+    draw_metric_row(x0, x1, y, "NET DOWN", rate_text, net_down_percent, stats->has_net_down, COLOR_NET_DOWN);
+    y += row_height;
+
+    char summary[48];
+    if (stats->has_procs && stats->has_threads) {
+      snprintf(summary, sizeof(summary), "Processes: %d  Threads: %d", stats->procs, stats->threads_total);
+    } else if (stats->has_procs) {
+      snprintf(summary, sizeof(summary), "Processes: %d", stats->procs);
+    } else {
+      snprintf(summary, sizeof(summary), "Processes: N/A");
+    }
+    draw_text_row(x0, x1, y, summary);
   }
+
 
   static void render_terminal(const char screen[TERM_ROWS][TERM_COLUMNS])
   {
@@ -647,6 +693,20 @@
     return true;
   }
 
+  static bool parse_int_token(const char *value, int *out)
+  {
+    if (value == NULL || value[0] == '\0') {
+      return false;
+    }
+    char *end = NULL;
+    long parsed = strtol(value, &end, 10);
+    if (end == value) {
+      return false;
+    }
+    *out = (int)parsed;
+    return true;
+  }
+
   /* Parses one "#SYS#...#END#" line into a system_stats_t. Returns false for anything else. */
   static bool parse_stats_line(const char *line, size_t length, system_stats_t *stats)
   {
@@ -687,14 +747,22 @@
             }
             cpu_token = strtok_r(NULL, ";", &cpu_state);
           }
+        } else if (strcmp(key, "corethreads") == 0) {
+          char *thread_state = NULL;
+          char *thread_token = strtok_r((char *)value, ";", &thread_state);
+          while (thread_token != NULL && stats->core_thread_data_count < MAX_CPU_CORES) {
+            int threads;
+            if (parse_int_token(thread_token, &threads)) {
+              stats->core_thread_count[stats->core_thread_data_count++] = threads;
+            }
+            thread_token = strtok_r(NULL, ";", &thread_state);
+          }
         } else if (strcmp(key, "cputemp") == 0) {
           stats->has_cpu_temp = parse_float_token(value, &stats->cpu_temp);
         } else if (strcmp(key, "ramused") == 0) {
           stats->has_ram_used = parse_float_token(value, &stats->ram_used_mb);
         } else if (strcmp(key, "ramtotal") == 0) {
           stats->has_ram_total = parse_float_token(value, &stats->ram_total_mb);
-        } else if (strcmp(key, "ramtemp") == 0) {
-          stats->has_ram_temp = parse_float_token(value, &stats->ram_temp);
         } else if (strcmp(key, "vramused") == 0) {
           stats->has_vram_used = parse_float_token(value, &stats->vram_used_mb);
         } else if (strcmp(key, "vramtotal") == 0) {
@@ -703,6 +771,14 @@
           stats->has_gpu_usage = parse_float_token(value, &stats->gpu_usage);
         } else if (strcmp(key, "gputemp") == 0) {
           stats->has_gpu_temp = parse_float_token(value, &stats->gpu_temp);
+        } else if (strcmp(key, "netup") == 0) {
+          stats->has_net_up = parse_float_token(value, &stats->net_up_kbps);
+        } else if (strcmp(key, "netdown") == 0) {
+          stats->has_net_down = parse_float_token(value, &stats->net_down_kbps);
+        } else if (strcmp(key, "procs") == 0) {
+          stats->has_procs = parse_int_token(value, &stats->procs);
+        } else if (strcmp(key, "threads") == 0) {
+          stats->has_threads = parse_int_token(value, &stats->threads_total);
         }
       }
       field = strtok_r(NULL, "|", &field_state);
