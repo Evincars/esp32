@@ -46,6 +46,11 @@ typedef enum {
     UI_SCR_PORTS,
     UI_SCR_SNIFFER,
     UI_SCR_PACKET,
+    UI_SCR_DEAUTH,
+    UI_SCR_BEACON,
+    UI_SCR_ROGUE,
+    UI_SCR_CSI,
+    UI_SCR_LOCATE,
     UI_SCR_WEB,
     UI_SCR_SYSTEM,
     UI_SCR_CLOCK,
@@ -104,6 +109,11 @@ lv_obj_t *ui_network_create(void);
 lv_obj_t *ui_ports_create(void);
 lv_obj_t *ui_sniffer_create(void);
 lv_obj_t *ui_packet_create(void);
+lv_obj_t *ui_deauth_create(void);
+lv_obj_t *ui_beacon_create(void);
+lv_obj_t *ui_rogue_create(void);
+lv_obj_t *ui_csi_create(void);
+lv_obj_t *ui_locate_create(void);
 lv_obj_t *ui_web_create(void);
 lv_obj_t *ui_system_create(void);
 lv_obj_t *ui_clock_create(void);

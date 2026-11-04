@@ -31,11 +31,35 @@ Built with ESP-IDF 6.1 and LVGL 9.2.
   web dashboard at boot, RST shortcuts, touch calibration, forget saved networks, sleep now.
 - **About** - author and website with a QR code.
 
+### RF lab / offensive tools
+
+> ⚠️ **Legal & ethical warning.** The tools below transmit raw 802.11 frames, impersonate networks and
+> intercept traffic. Only use them on radios, networks and devices **you own or are explicitly authorised to
+> test**. Jamming, deauthenticating or phishing third parties is illegal in most jurisdictions. Each tool is
+> gated behind an on-device confirmation dialog. You are responsible for how you use this firmware.
+
+- **Deauth** - sends 802.11 deauthentication frames to a chosen AP (broadcast or a selected BSSID) to test how
+  resilient nearby clients are to disconnection. Pick a scanned AP, confirm, start/stop; shows frames sent and pps.
+- **Beacon spam** - broadcasts hundreds of fake access-point beacons (configurable count) so the area fills with
+  bogus SSIDs. Confirm-gated; shows the beacon rate.
+- **Rogue AP** - opens an open "free Wi-Fi" access point with a captive portal. A built-in DNS redirector points
+  every lookup at the board, and a spoofed login page captures the credentials visitors type (social-engineering
+  simulation). Editable SSID, live client/DNS/HTTP counters and a captured-credentials list. Starting it stops the
+  web dashboard (both want port 80).
+- **CSI motion** - uses Wi-Fi Channel State Information to sense motion/presence in the room without a camera. The
+  per-subcarrier amplitude is diffed frame-to-frame on the ESP32-S3 vector/SIMD unit (esp-dsp `dsps_sub_f32` /
+  `dsps_dotprod_f32`) to compute a motion-energy percentage, a presence flag and a live waveform. Adjustable
+  sensitivity. Needs an associated AP so CSI frames keep arriving.
+- **Locator (FTM)** - measures the distance to an FTM/RTT-capable router with the 802.11mc Fine Timing
+  Measurement standard and plots it on a radar with a direction vector. Distance is centimetre-class; the bearing
+  is an RSSI-trend estimate (there is no compass/antenna array), so treat the arrow as a warmer/colder hint.
+
 ## Buttons
 
 | Button | Action |
 | --- | --- |
-| **BOOT** | back, on every screen; wakes the board from sleep |
+| **PWR / USER** (GPIO21) | hibernate: turns the display and backlight off while the firmware keeps running in the background (Wi-Fi, web server and any running tool stay up). Press again to wake. |
+| **BOOT** (GPIO0) | on the top-level views, cycles menu -> clock -> system monitor; on any other screen, goes back. Also wakes the board from hibernate/sleep. |
 | **RST**, once | reboot into the next view: menu -> system monitor -> clock -> menu |
 | **RST**, twice within ~2 s | deep sleep (display and touch powered off); BOOT or RST wakes it |
 
@@ -77,6 +101,10 @@ If the picture is mirrored or the colors look inverted, change `LCD_MIRROR_X`, `
 | `main/time_sync.*` | SNTP and time zones |
 | `main/portscan.*` | TCP connect scanner and banner grabbing |
 | `main/sniffer.*` | LAN (lwIP netif hook) and 802.11 (monitor mode) capture into a PSRAM ring |
+| `main/wifi_attack.*` | raw-frame deauth flood and beacon spam engine |
+| `main/rogue_ap.*` | open softAP, captive DNS redirector and credential-capturing portal |
+| `main/wifi_csi.*` | CSI capture + esp-dsp SIMD motion/presence detection |
+| `main/wifi_ftm.*` | 802.11mc Fine Timing Measurement distance sessions |
 | `main/pkt_decode.*` | protocol dissectors: summary line and per-OSI-layer fields |
 | `main/oui.*` | small MAC vendor table |
 | `main/web_server.*`, `main/web/index.html` | HTTP dashboard and JSON API |

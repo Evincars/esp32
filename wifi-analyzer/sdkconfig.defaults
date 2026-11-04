@@ -24,6 +24,12 @@ CONFIG_LWIP_LOCAL_HOSTNAME="evincars-wifi"
 # port scanner (8 concurrent connects) + web server
 CONFIG_LWIP_MAX_SOCKETS=16
 
+# Channel State Information sensing + Fine Timing Measurement (RTT) locating
+CONFIG_ESP_WIFI_CSI_ENABLED=y
+CONFIG_ESP_WIFI_FTM_ENABLE=y
+CONFIG_ESP_WIFI_FTM_INITIATOR_SUPPORT=y
+CONFIG_ESP_WIFI_FTM_RESPONDER_SUPPORT=y
+
 # per-core CPU load from the idle tasks' run time
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 CONFIG_FREERTOS_RUN_TIME_COUNTER_TYPE_U64=y

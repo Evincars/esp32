@@ -59,6 +59,13 @@ int board_battery_mv(void);
 int board_battery_percent(int mv);
 
 bool board_boot_button_pressed(void);
+bool board_user_button_pressed(void);
+
+/* Light "hibernate": backlight and panel off, CPU and radio keep running.
+   board_display_wake() restores the panel and the given brightness. */
+void board_display_sleep(void);
+void board_display_wake(int brightness_percent);
+bool board_display_asleep(void);
 
 /* Display and touch power off, then deep sleep until BOOT is pressed (RST also wakes). */
 [[noreturn]] void board_deep_sleep(void);

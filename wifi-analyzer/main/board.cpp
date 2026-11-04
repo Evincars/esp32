@@ -19,6 +19,8 @@ static adc_oneshot_unit_handle_t s_adc;
 static adc_cali_handle_t s_adc_cali;
 static adc_channel_t s_adc_channel;
 static bool s_backlight_ready;
+static esp_lcd_panel_handle_t s_panel;
+static bool s_display_asleep;
 
 void board_power_init(void)
 {
@@ -91,6 +93,7 @@ esp_lcd_panel_handle_t board_lcd_init(size_t max_transfer_bytes, board_lcd_trans
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel, true));
 
     ESP_LOGI(TAG, "ST7789 %dx%d @ %d MHz ready", LCD_H_RES, LCD_V_RES, LCD_PIXEL_CLOCK_HZ / 1000000);
+    s_panel = panel;
     return panel;
 }
 
@@ -194,6 +197,34 @@ int board_battery_percent(int mv)
 bool board_boot_button_pressed(void)
 {
     return gpio_get_level(PIN_BUTTON_BOOT) == 0;
+}
+
+bool board_user_button_pressed(void)
+{
+    return gpio_get_level(PIN_BUTTON_USER) == 0;
+}
+
+void board_display_sleep(void)
+{
+    if (s_display_asleep) return;
+    s_display_asleep = true;
+    board_backlight_set(0);
+    if (s_panel) esp_lcd_panel_disp_on_off(s_panel, false);
+    ESP_LOGI(TAG, "display asleep (firmware keeps running)");
+}
+
+void board_display_wake(int brightness_percent)
+{
+    if (!s_display_asleep) return;
+    s_display_asleep = false;
+    if (s_panel) esp_lcd_panel_disp_on_off(s_panel, true);
+    board_backlight_set(brightness_percent);
+    ESP_LOGI(TAG, "display awake");
+}
+
+bool board_display_asleep(void)
+{
+    return s_display_asleep;
 }
 
 void board_deep_sleep(void)

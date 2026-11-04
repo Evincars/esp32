@@ -48,6 +48,11 @@ static lv_obj_t *create_screen(ui_screen_id_t id)
     case UI_SCR_PORTS: return ui_ports_create();
     case UI_SCR_SNIFFER: return ui_sniffer_create();
     case UI_SCR_PACKET: return ui_packet_create();
+    case UI_SCR_DEAUTH: return ui_deauth_create();
+    case UI_SCR_BEACON: return ui_beacon_create();
+    case UI_SCR_ROGUE: return ui_rogue_create();
+    case UI_SCR_CSI: return ui_csi_create();
+    case UI_SCR_LOCATE: return ui_locate_create();
     case UI_SCR_WEB: return ui_web_create();
     case UI_SCR_SYSTEM: return ui_system_create();
     case UI_SCR_CLOCK: return ui_clock_create();
@@ -209,11 +214,13 @@ lv_obj_t *ui_screen_create(const char *title, bool with_back)
 
     lv_obj_t *status = lv_obj_create(hdr);
     lv_obj_remove_style_all(status);
+    lv_obj_remove_flag(status, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(status, LV_SIZE_CONTENT, LV_PCT(100));
     lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(status, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(status, 10, 0);
-    lv_obj_align(status, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_obj_set_style_pad_column(status, 8, 0);
+    /* small right inset so the last glyph is never clipped at the panel edge */
+    lv_obj_align(status, LV_ALIGN_RIGHT_MID, -6, 0);
     s_hdr_time = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     s_hdr_net = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     s_hdr_batt = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
@@ -492,14 +499,34 @@ void ui_fmt_mac(char *buf, size_t len, const uint8_t mac[6])
 
 /* ---------------- boot / init ---------------- */
 
+/* The physical BOOT and USER (power) buttons. BOOT cycles the main views on
+   top-level screens and backs out of sub-screens; USER hibernates the display. */
 static void boot_button_poll(lv_timer_t *)
 {
-    static bool was_down;
-    bool down = board_boot_button_pressed();
-    if (down && !was_down && s_current != UI_SCR_MENU && s_current != UI_SCR_CALIBRATE) {
-        ui_back();
+    static bool boot_was_down, user_was_down;
+
+    bool user_down = board_user_button_pressed();
+    if (user_down && !user_was_down) {
+        if (board_display_asleep()) board_display_wake(g_settings.brightness);
+        else board_display_sleep();
     }
-    was_down = down;
+    user_was_down = user_down;
+
+    bool boot_down = board_boot_button_pressed();
+    if (boot_down && !boot_was_down) {
+        if (board_display_asleep()) {
+            board_display_wake(g_settings.brightness);
+        } else if (s_current == UI_SCR_MENU) {
+            ui_go(UI_SCR_CLOCK);
+        } else if (s_current == UI_SCR_CLOCK) {
+            ui_go(UI_SCR_SYSTEM);
+        } else if (s_current == UI_SCR_SYSTEM) {
+            ui_go(UI_SCR_MENU);
+        } else if (s_current != UI_SCR_CALIBRATE) {
+            ui_back();
+        }
+    }
+    boot_was_down = boot_down;
 }
 
 void ui_init(bool need_calibration, ui_screen_id_t start)

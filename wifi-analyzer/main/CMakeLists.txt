@@ -14,6 +14,10 @@ idf_component_register(
         "touch.cpp"
         "web_server.cpp"
         "wifi_mgr.cpp"
+        "wifi_attack.cpp"
+        "rogue_ap.cpp"
+        "wifi_csi.cpp"
+        "wifi_ftm.cpp"
         "ui/ui_about.cpp"
         "ui/ui_calibrate.cpp"
         "ui/ui_channels.cpp"
@@ -29,6 +33,11 @@ idf_component_register(
         "ui/ui_splash.cpp"
         "ui/ui_system.cpp"
         "ui/ui_web.cpp"
+        "ui/ui_deauth.cpp"
+        "ui/ui_beacon.cpp"
+        "ui/ui_rogue.cpp"
+        "ui/ui_csi.cpp"
+        "ui/ui_locate.cpp"
     INCLUDE_DIRS "." "ui"
     EMBED_TXTFILES "web/index.html"
     PRIV_REQUIRES
@@ -47,6 +56,7 @@ idf_component_register(
         esp_partition
         esp_timer
         esp_wifi
+        espressif__esp-dsp
         lwip
         nvs_flash
         spi_flash
@@ -54,3 +64,8 @@ idf_component_register(
 
 # LVGL style selectors OR different enums together (LV_PART_* | LV_STATE_*), which C++20 flags.
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-deprecated-enum-enum-conversion)
+
+# wifi_attack.cpp overrides the Wi-Fi driver's raw-frame sanity hook so deauth frames
+# can be transmitted; the symbol also exists (non-weak) in the closed-source Wi-Fi blob,
+# so let the linker keep our definition instead of erroring on the duplicate.
+target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--allow-multiple-definition")
