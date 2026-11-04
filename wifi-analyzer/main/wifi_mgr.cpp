@@ -13,6 +13,7 @@
 #include "lwip/etharp.h"
 #include "lwip/netif.h"
 #include "nvs.h"
+#include "time_sync.h"
 
 static const char *TAG = "wifi_mgr";
 
@@ -225,6 +226,7 @@ static void on_ip_event(void *, esp_event_base_t, int32_t id, void *)
         set_status(WIFI_ST_CONNECTED, text);
         s_connected_since = esp_timer_get_time();
         known_remember(&s_target);
+        time_sync_start();
     }
 }
 
@@ -245,6 +247,11 @@ void wifi_mgr_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "Wi-Fi started, %d saved network(s)", s_known_count);
+}
+
+esp_netif_t *wifi_mgr_netif(void)
+{
+    return s_netif;
 }
 
 bool wifi_mgr_scan_start(void)
@@ -278,6 +285,11 @@ int wifi_mgr_get_aps(wifi_ap_record_t *out, int max)
     int n = std::min(max, s_ap_count);
     memcpy(out, s_aps, n * sizeof(wifi_ap_record_t));
     return n;
+}
+
+int wifi_mgr_ap_count(void)
+{
+    return s_ap_count;
 }
 
 void wifi_mgr_connect(const char *ssid, const char *password)
@@ -529,6 +541,11 @@ int wifi_mgr_lan_hosts(lan_host_t *out, int max)
     int n = std::min(max, s_host_count);
     memcpy(out, s_hosts, n * sizeof(lan_host_t));
     return n;
+}
+
+int wifi_mgr_lan_host_count(void)
+{
+    return s_host_count;
 }
 
 /* ---------------- helpers ---------------- */

@@ -2,6 +2,7 @@
 #include <cstring>
 
 #include "esp_timer.h"
+#include "oui.h"
 #include "ui.h"
 #include "wifi_mgr.h"
 
@@ -29,7 +30,7 @@ static struct {
 static void on_disconnect(lv_event_t *)
 {
     wifi_mgr_disconnect();
-    ui_toast("Disconnected", UI_COL_AMBER);
+    ui_toast("Disconnected", UI_COL_ACCENT);
 }
 
 static void on_scan(lv_event_t *)
@@ -53,24 +54,6 @@ static void on_retry(lv_event_t *)
     if (wifi_mgr_target_ssid(ssid, sizeof(ssid))) ui_connect_flow(ssid, true);
 }
 
-static lv_obj_t *centered_icon(lv_obj_t *parent, const char *sym, lv_color_t col)
-{
-    lv_obj_t *ring = lv_obj_create(parent);
-    lv_obj_remove_style_all(ring);
-    lv_obj_set_size(ring, 56, 56);
-    lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(ring, col, 0);
-    lv_obj_set_style_bg_opa(ring, LV_OPA_20, 0);
-    lv_obj_set_style_border_color(ring, col, 0);
-    lv_obj_set_style_border_width(ring, 2, 0);
-    lv_obj_set_style_shadow_color(ring, col, 0);
-    lv_obj_set_style_shadow_width(ring, 20, 0);
-    lv_obj_set_style_shadow_opa(ring, LV_OPA_40, 0);
-    lv_obj_t *l = ui_label(ring, &lv_font_montserrat_20, col, sym);
-    lv_obj_center(l);
-    return ring;
-}
-
 static lv_obj_t *button_row(lv_obj_t *parent)
 {
     lv_obj_t *row = lv_obj_create(parent);
@@ -92,40 +75,41 @@ static void build_offline(lv_obj_t *tab, wifi_state_t st)
     if (st == WIFI_ST_CONNECTING) {
         lv_obj_t *sp = lv_spinner_create(tab);
         lv_obj_set_size(sp, 56, 56);
-        lv_obj_set_style_arc_color(sp, UI_COL_AMBER, LV_PART_INDICATOR);
+        lv_obj_set_size(sp, 40, 40);
+        lv_obj_set_style_arc_width(sp, 3, LV_PART_MAIN);
+        lv_obj_set_style_arc_width(sp, 3, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(sp, UI_COL_ACCENT, LV_PART_INDICATOR);
         lv_obj_set_style_arc_color(sp, UI_COL_BORDER, LV_PART_MAIN);
         lv_obj_t *t = ui_label(tab, &lv_font_montserrat_14, UI_COL_TEXT, wifi_mgr_state_text());
         lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
         lv_obj_set_style_max_width(t, 290, 0);
         lv_obj_t *row = button_row(tab);
-        lv_obj_t *b = ui_button(row, "Cancel", UI_COL_RED);
+        lv_obj_t *b = ui_button_outline(row, "Cancel");
         lv_obj_add_event_cb(b, on_disconnect, LV_EVENT_CLICKED, nullptr);
         return;
     }
 
     if (st == WIFI_ST_FAILED) {
-        ui_anim_enter(centered_icon(tab, LV_SYMBOL_CLOSE, UI_COL_RED), 0);
-        lv_obj_t *t = ui_label(tab, &lv_font_montserrat_16, UI_COL_RED, wifi_mgr_state_text());
-        ui_anim_enter(t, 80);
+        ui_caption(tab, "CONNECTION FAILED");
+        lv_obj_t *t = ui_label(tab, &lv_font_montserrat_16, UI_COL_BAD, wifi_mgr_state_text());
+        ui_anim_enter(t, 0);
         lv_obj_t *row = button_row(tab);
-        lv_obj_add_event_cb(ui_button(row, LV_SYMBOL_REFRESH " Retry", UI_COL_AMBER), on_retry, LV_EVENT_CLICKED, nullptr);
-        lv_obj_add_event_cb(ui_button(row, LV_SYMBOL_WIFI " Scan", UI_COL_CYAN), on_scan, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(ui_button(row, "Retry", UI_COL_ACCENT), on_retry, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(ui_button_outline(row, "Scan"), on_scan, LV_EVENT_CLICKED, nullptr);
         return;
     }
 
-    ui_anim_enter(centered_icon(tab, LV_SYMBOL_WIFI, UI_COL_TEXT_DIM), 0);
     lv_obj_t *t = ui_label(tab, &lv_font_montserrat_16, UI_COL_TEXT, "Not connected");
-    ui_anim_enter(t, 60);
+    ui_anim_enter(t, 0);
     lv_obj_t *hint = ui_label(tab, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "Pick a network in the Scanner to join it");
-    ui_anim_enter(hint, 120);
+    ui_anim_enter(hint, 60);
     lv_obj_t *row = button_row(tab);
-    lv_obj_add_event_cb(ui_button(row, LV_SYMBOL_WIFI " Scan", UI_COL_CYAN), on_scan, LV_EVENT_CLICKED, nullptr);
-    lv_obj_add_event_cb(ui_button(row, LV_SYMBOL_EYE_CLOSE " Hidden", UI_COL_PURPLE), on_hidden, LV_EVENT_CLICKED,
-                        nullptr);
+    lv_obj_add_event_cb(ui_button(row, "Scan", UI_COL_ACCENT), on_scan, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(ui_button_outline(row, "Hidden"), on_hidden, LV_EVENT_CLICKED, nullptr);
     if (wifi_mgr_known_count() > 0) {
-        lv_obj_add_event_cb(ui_button(row, LV_SYMBOL_LOOP, UI_COL_GREEN), on_reconnect, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(ui_button_outline(row, "Reconnect"), on_reconnect, LV_EVENT_CLICKED, nullptr);
     }
-    ui_anim_enter(row, 180);
+    ui_anim_enter(row, 120);
 }
 
 static void build_connected(lv_obj_t *tab)
@@ -136,16 +120,14 @@ static void build_connected(lv_obj_t *tab)
 
     /* hero card: SSID, live RSSI and its history */
     lv_obj_t *hero = ui_card(tab);
-    lv_obj_set_size(hero, LV_PCT(100), 92);
-    lv_obj_set_style_border_color(hero, UI_COL_GREEN, 0);
-    lv_obj_set_style_border_opa(hero, LV_OPA_50, 0);
+    lv_obj_set_size(hero, LV_PCT(100), 88);
     S.bars = ui_signal_bars(hero, -100);
     lv_obj_align(S.bars, LV_ALIGN_TOP_LEFT, 0, 0);
     S.ssid = ui_label(hero, &lv_font_montserrat_16, UI_COL_TEXT, "");
     lv_label_set_long_mode(S.ssid, LV_LABEL_LONG_DOT);
     lv_obj_set_width(S.ssid, 190);
     lv_obj_align(S.ssid, LV_ALIGN_TOP_LEFT, 26, -2);
-    S.rssi = ui_label(hero, &lv_font_montserrat_16, UI_COL_GREEN, "");
+    S.rssi = ui_label(hero, &lv_font_montserrat_16, UI_COL_GOOD, "");
     lv_obj_align(S.rssi, LV_ALIGN_TOP_RIGHT, 0, -2);
 
     S.chart = lv_chart_create(hero);
@@ -163,7 +145,7 @@ static void build_connected(lv_obj_t *tab)
     lv_obj_set_style_line_width(S.chart, 2, LV_PART_ITEMS);
     lv_obj_set_style_width(S.chart, 0, LV_PART_INDICATOR);
     lv_obj_set_style_height(S.chart, 0, LV_PART_INDICATOR);
-    S.series = lv_chart_add_series(S.chart, UI_COL_GREEN, LV_CHART_AXIS_PRIMARY_Y);
+    S.series = lv_chart_add_series(S.chart, UI_COL_GOOD, LV_CHART_AXIS_PRIMARY_Y);
     lv_chart_set_all_value(S.chart, S.series, LV_CHART_POINT_NONE);
     ui_anim_enter(hero, 0);
 
@@ -171,7 +153,7 @@ static void build_connected(lv_obj_t *tab)
     lv_obj_set_size(card, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     S.v_ip = ui_kv_row(card, "IPv4 address");
-    lv_obj_set_style_text_color(S.v_ip, UI_COL_GREEN, 0);
+    lv_obj_set_style_text_color(S.v_ip, UI_COL_GOOD, 0);
     S.v_mask = ui_kv_row(card, "Netmask");
     S.v_gw = ui_kv_row(card, "Gateway");
     S.v_dns1 = ui_kv_row(card, "DNS 1");
@@ -188,8 +170,7 @@ static void build_connected(lv_obj_t *tab)
     ui_anim_enter(card, 90);
 
     lv_obj_t *row = button_row(tab);
-    lv_obj_add_event_cb(ui_button(row, LV_SYMBOL_CLOSE " Disconnect", UI_COL_RED), on_disconnect, LV_EVENT_CLICKED,
-                        nullptr);
+    lv_obj_add_event_cb(ui_button(row, "Disconnect", UI_COL_BAD), on_disconnect, LV_EVENT_CLICKED, nullptr);
 }
 
 static void update_connected(void)
@@ -241,6 +222,11 @@ static void rebuild_status(wifi_state_t st)
 
 /* ---------------- LAN tab ---------------- */
 
+static void on_host_clicked(lv_event_t *e)
+{
+    ui_ports_open((uint32_t)(uintptr_t)lv_event_get_user_data(e));
+}
+
 static void rebuild_lan_list(void)
 {
     static lan_host_t hosts[LAN_MAX_HOSTS];
@@ -249,30 +235,34 @@ static void rebuild_lan_list(void)
     lv_obj_clean(S.lan_list);
     for (int i = 0; i < n; i++) {
         const lan_host_t &h = hosts[i];
-        lv_obj_t *row = ui_card(S.lan_list);
-        lv_obj_set_size(row, LV_PCT(100), 34);
-        lv_obj_set_style_pad_ver(row, 3, 0);
-        lv_color_t col = h.is_self ? UI_COL_CYAN : h.is_gateway ? UI_COL_AMBER : UI_COL_GREEN;
-        lv_obj_set_style_border_color(row, col, 0);
+        lv_obj_t *row = lv_button_create(S.lan_list);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_size(row, LV_PCT(100), 32);
+        lv_obj_set_style_bg_color(row, UI_COL_CARD, 0);
+        lv_obj_set_style_bg_color(row, UI_COL_CARD_HI, LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(row, UI_RADIUS, 0);
+        lv_obj_set_style_pad_hor(row, 8, 0);
+        lv_obj_set_style_border_color(row, h.is_self || h.is_gateway ? UI_COL_ACCENT : UI_COL_BORDER, 0);
         lv_obj_set_style_border_side(row, LV_BORDER_SIDE_LEFT, 0);
-        lv_obj_set_style_border_width(row, 3, 0);
+        lv_obj_set_style_border_width(row, 2, 0);
+        if (!h.is_self) lv_obj_add_event_cb(row, on_host_clicked, LV_EVENT_CLICKED, (void *)(uintptr_t)h.ip);
 
         esp_ip4_addr_t ip = {h.ip};
         lv_obj_t *ipl = ui_label(row, &lv_font_montserrat_14, UI_COL_TEXT, "");
         lv_label_set_text_fmt(ipl, IPSTR, IP2STR(&ip));
-        lv_obj_align(ipl, LV_ALIGN_TOP_LEFT, 0, -2);
+        lv_obj_align(ipl, LV_ALIGN_TOP_LEFT, 0, 0);
 
         char mac[20];
         ui_fmt_mac(mac, sizeof(mac), h.mac);
+        const char *vendor = oui_vendor(h.mac);
         lv_obj_t *macl = ui_label(row, &lv_font_montserrat_10, UI_COL_TEXT_DIM, "");
-        /* locally administered bit set = randomized/private MAC (phones, laptops) */
-        lv_label_set_text_fmt(macl, "%s%s", mac, (h.mac[0] & 0x02) ? "  (random)" : "");
-        lv_obj_align(macl, LV_ALIGN_BOTTOM_LEFT, 0, 2);
+        lv_label_set_text_fmt(macl, "%s%s%s", mac, vendor ? "  " : "", vendor ? vendor : "");
+        lv_obj_align(macl, LV_ALIGN_BOTTOM_LEFT, 0, -1);
 
-        if (h.is_self || h.is_gateway) {
-            lv_obj_t *tag = ui_label(row, &lv_font_montserrat_10, col, h.is_self ? "THIS DEVICE" : "GATEWAY");
-            lv_obj_align(tag, LV_ALIGN_RIGHT_MID, 0, 0);
-        }
+        lv_obj_t *tag = ui_label(row, &lv_font_montserrat_10, h.is_self || h.is_gateway ? UI_COL_ACCENT : UI_COL_TEXT_DIM,
+                                 h.is_self ? "THIS DEVICE" : h.is_gateway ? "GATEWAY  scan >" : "scan >");
+        lv_obj_align(tag, LV_ALIGN_RIGHT_MID, 0, 0);
         if (i >= old) ui_anim_enter(row, 0);
     }
 }
@@ -280,7 +270,7 @@ static void rebuild_lan_list(void)
 static void on_lan_scan(lv_event_t *)
 {
     if (wifi_mgr_state() != WIFI_ST_CONNECTED) {
-        ui_toast("Connect to a network first", UI_COL_AMBER);
+        ui_toast("Connect to a network first", UI_COL_ACCENT);
         return;
     }
     if (wifi_mgr_lan_scan_start()) {
@@ -300,7 +290,7 @@ static void update_lan(void)
         lv_obj_remove_state(S.lan_btn, LV_STATE_DISABLED);
         int n = lv_obj_get_child_count(S.lan_list);
         if (wifi_mgr_state() != WIFI_ST_CONNECTED) lv_label_set_text(S.lan_status, "Not connected");
-        else if (n) lv_label_set_text_fmt(S.lan_status, "%d hosts on local /24", n);
+        else if (n) lv_label_set_text_fmt(S.lan_status, "%d hosts, tap to port-scan", n);
         else lv_label_set_text(S.lan_status, "ARP sweep of the local /24");
     }
 
@@ -315,19 +305,17 @@ static void build_lan(lv_obj_t *tab)
 {
     lv_obj_remove_flag(tab, LV_OBJ_FLAG_SCROLLABLE);
 
-    S.lan_btn = ui_button(tab, LV_SYMBOL_REFRESH " Scan LAN", UI_COL_GREEN);
-    lv_obj_set_size(S.lan_btn, 110, 30);
+    S.lan_btn = ui_button(tab, "Discover", UI_COL_ACCENT);
+    lv_obj_set_size(S.lan_btn, 90, 28);
+    lv_obj_set_style_pad_all(S.lan_btn, 0, 0);
     lv_obj_align(S.lan_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
     lv_obj_add_event_cb(S.lan_btn, on_lan_scan, LV_EVENT_CLICKED, nullptr);
 
     S.lan_status = ui_label(tab, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     lv_obj_align(S.lan_status, LV_ALIGN_TOP_LEFT, 0, 2);
 
-    S.lan_bar = lv_bar_create(tab);
-    lv_obj_set_size(S.lan_bar, 170, 4);
+    S.lan_bar = ui_bar(tab, 170, 2);
     lv_obj_align(S.lan_bar, LV_ALIGN_TOP_LEFT, 0, 22);
-    lv_obj_set_style_bg_color(S.lan_bar, UI_COL_BORDER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(S.lan_bar, UI_COL_GREEN, LV_PART_INDICATOR);
 
     S.lan_list = lv_obj_create(tab);
     lv_obj_remove_style_all(S.lan_list);
@@ -347,7 +335,7 @@ static void poll(lv_timer_t *)
     static uint32_t tick;
     wifi_state_t st = wifi_mgr_state();
     if (st != S.shown_state) {
-        if (st == WIFI_ST_CONNECTED) ui_toast(LV_SYMBOL_OK "  Connected!", UI_COL_GREEN);
+        if (st == WIFI_ST_CONNECTED) ui_toast("Connected", UI_COL_GOOD);
         rebuild_status(st);
     } else if (st == WIFI_ST_CONNECTED && ++tick % 2 == 0) {
         update_connected();
@@ -367,10 +355,10 @@ static void style_tabview(lv_obj_t *tv)
         lv_obj_t *btn = lv_obj_get_child(bar, i);
         lv_obj_set_style_text_font(btn, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(btn, UI_COL_TEXT_DIM, 0);
-        lv_obj_set_style_text_color(btn, UI_COL_GREEN, LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(btn, UI_COL_ACCENT, LV_STATE_CHECKED);
         lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
         lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, LV_STATE_CHECKED);
-        lv_obj_set_style_border_color(btn, UI_COL_GREEN, LV_STATE_CHECKED);
+        lv_obj_set_style_border_color(btn, UI_COL_ACCENT, LV_STATE_CHECKED);
         lv_obj_set_style_border_width(btn, 2, LV_STATE_CHECKED);
         lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_BOTTOM, LV_STATE_CHECKED);
     }
@@ -381,15 +369,15 @@ static void style_tabview(lv_obj_t *tv)
 lv_obj_t *ui_network_create(void)
 {
     memset(&S, 0, sizeof(S));
-    lv_obj_t *content = ui_screen_create("Network", UI_COL_GREEN, true);
+    lv_obj_t *content = ui_screen_create("Network", true);
     lv_obj_set_style_pad_all(content, 0, 0);
     lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *tv = lv_tabview_create(content);
     lv_obj_set_size(tv, LV_PCT(100), LV_PCT(100));
     lv_tabview_set_tab_bar_size(tv, 28);
-    S.status_tab = lv_tabview_add_tab(tv, LV_SYMBOL_WIFI "  Status");
-    S.lan_tab = lv_tabview_add_tab(tv, LV_SYMBOL_LIST "  LAN hosts");
+    S.status_tab = lv_tabview_add_tab(tv, "Status");
+    S.lan_tab = lv_tabview_add_tab(tv, "LAN hosts");
     style_tabview(tv);
     lv_obj_set_style_pad_all(S.status_tab, 6, 0);
     lv_obj_set_style_pad_all(S.lan_tab, 6, 0);

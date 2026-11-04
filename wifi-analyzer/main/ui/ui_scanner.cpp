@@ -7,7 +7,7 @@
 #include "ui.h"
 #include "wifi_mgr.h"
 
-#define ROW_H 38
+#define ROW_H 34
 #define TOOLBAR_H 28
 #define SHEET_H 204
 
@@ -100,13 +100,10 @@ static void open_sheet(const wifi_ap_record_t *ap)
     lv_obj_set_size(sheet, LV_PCT(100), SHEET_H);
     lv_obj_set_style_bg_color(sheet, UI_COL_CARD, 0);
     lv_obj_set_style_bg_opa(sheet, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(sheet, 14, 0);
-    lv_obj_set_style_border_color(sheet, UI_COL_CYAN, 0);
+    lv_obj_set_style_radius(sheet, UI_RADIUS, 0);
+    lv_obj_set_style_border_color(sheet, UI_COL_BORDER, 0);
     lv_obj_set_style_border_width(sheet, 1, 0);
     lv_obj_set_style_border_side(sheet, LV_BORDER_SIDE_TOP, 0);
-    lv_obj_set_style_shadow_color(sheet, UI_COL_CYAN, 0);
-    lv_obj_set_style_shadow_width(sheet, 24, 0);
-    lv_obj_set_style_shadow_opa(sheet, LV_OPA_30, 0);
     lv_obj_set_style_pad_all(sheet, 8, 0);
     lv_obj_add_flag(sheet, LV_OBJ_FLAG_CLICKABLE); /* swallow taps so the backdrop doesn't close */
     lv_obj_remove_flag(sheet, LV_OBJ_FLAG_SCROLLABLE);
@@ -114,7 +111,7 @@ static void open_sheet(const wifi_ap_record_t *ap)
     lv_obj_t *handle = lv_obj_create(sheet);
     lv_obj_remove_style_all(handle);
     lv_obj_set_size(handle, 36, 4);
-    lv_obj_set_style_radius(handle, 2, 0);
+    lv_obj_set_style_radius(handle, 1, 0);
     lv_obj_set_style_bg_color(handle, UI_COL_BORDER, 0);
     lv_obj_set_style_bg_opa(handle, LV_OPA_COVER, 0);
     lv_obj_align(handle, LV_ALIGN_TOP_MID, 0, -4);
@@ -171,9 +168,7 @@ static void open_sheet(const wifi_ap_record_t *ap)
     }
     lv_label_set_text(ui_kv_row(body, "FTM responder"), ap->ftm_responder ? "yes" : "no");
 
-    lv_obj_t *close = ui_button(sheet, "Close", UI_COL_BORDER);
-    lv_obj_set_style_text_color(lv_obj_get_child(close, 0), UI_COL_TEXT, 0);
-    lv_obj_set_style_shadow_width(close, 0, 0);
+    lv_obj_t *close = ui_button_outline(sheet, "Close");
     lv_obj_set_size(close, 120, 32);
     lv_obj_align(close, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_add_event_cb(close, on_sheet_close, LV_EVENT_CLICKED, backdrop);
@@ -181,7 +176,7 @@ static void open_sheet(const wifi_ap_record_t *ap)
     bool enterprise = ap->authmode == WIFI_AUTH_WPA2_ENTERPRISE || ap->authmode == WIFI_AUTH_WPA3_ENTERPRISE ||
                       ap->authmode == WIFI_AUTH_WPA2_WPA3_ENTERPRISE || ap->authmode == WIFI_AUTH_WPA_ENTERPRISE ||
                       ap->authmode == WIFI_AUTH_WPA3_ENT_192;
-    lv_obj_t *conn = ui_button(sheet, LV_SYMBOL_WIFI "  Connect", UI_COL_CYAN);
+    lv_obj_t *conn = ui_button(sheet, "Connect", UI_COL_ACCENT);
     lv_obj_set_size(conn, 160, 32);
     lv_obj_align(conn, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_add_event_cb(conn, on_sheet_connect, LV_EVENT_CLICKED, backdrop);
@@ -223,10 +218,10 @@ static void build_row(int idx, const uint8_t *connected_bssid)
     lv_obj_set_style_bg_color(row, UI_COL_CARD, 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(row, UI_COL_CARD_HI, LV_STATE_PRESSED);
-    lv_obj_set_style_radius(row, 8, 0);
+    lv_obj_set_style_radius(row, UI_RADIUS, 0);
     lv_obj_set_style_border_width(row, is_connected ? 2 : 0, 0);
     lv_obj_set_style_border_side(row, LV_BORDER_SIDE_LEFT, 0);
-    lv_obj_set_style_border_color(row, UI_COL_GREEN, 0);
+    lv_obj_set_style_border_color(row, UI_COL_GOOD, 0);
     lv_obj_add_event_cb(row, on_row_clicked, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
 
     lv_obj_t *bars = ui_signal_bars(row, ap->rssi);
@@ -236,7 +231,7 @@ static void build_row(int idx, const uint8_t *connected_bssid)
                               ap->ssid[0] ? (const char *)ap->ssid : "(hidden)");
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
     lv_obj_set_width(name, 196);
-    lv_obj_align(name, LV_ALIGN_TOP_LEFT, 34, 3);
+    lv_obj_align(name, LV_ALIGN_TOP_LEFT, 30, 1);
 
     char mac[20];
     ui_fmt_mac(mac, sizeof(mac), ap->bssid);
@@ -245,14 +240,14 @@ static void build_row(int idx, const uint8_t *connected_bssid)
                           wifi_auth_str(ap->authmode), mac);
     lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
     lv_obj_set_width(sub, 220);
-    lv_obj_align(sub, LV_ALIGN_BOTTOM_LEFT, 34, -4);
+    lv_obj_align(sub, LV_ALIGN_BOTTOM_LEFT, 30, -3);
 
     lv_obj_t *rssi = ui_label(row, &lv_font_montserrat_14, ui_rssi_color(ap->rssi), "");
     lv_label_set_text_fmt(rssi, "%d", ap->rssi);
-    lv_obj_align(rssi, LV_ALIGN_TOP_RIGHT, -8, 3);
-    lv_obj_t *icon = ui_label(row, &lv_font_montserrat_10, is_connected ? UI_COL_GREEN : UI_COL_TEXT_DIM,
-                              is_connected ? LV_SYMBOL_OK " dBm" : ap->authmode == WIFI_AUTH_OPEN ? "open" : "dBm");
-    lv_obj_align(icon, LV_ALIGN_BOTTOM_RIGHT, -8, -4);
+    lv_obj_align(rssi, LV_ALIGN_TOP_RIGHT, -8, 1);
+    lv_obj_t *tag = ui_label(row, &lv_font_montserrat_10, is_connected ? UI_COL_GOOD : UI_COL_TEXT_DIM,
+                             is_connected ? "joined" : ap->authmode == WIFI_AUTH_OPEN ? "open" : "dBm");
+    lv_obj_align(tag, LV_ALIGN_BOTTOM_RIGHT, -8, -3);
 }
 
 static void rebuild_list(void)
@@ -300,14 +295,14 @@ static void on_scan_clicked(lv_event_t *)
 {
     S.last_scan_us = esp_timer_get_time();
     if (!wifi_mgr_scan_start() && wifi_mgr_state() == WIFI_ST_CONNECTING) {
-        ui_toast("Busy connecting, try again in a moment", UI_COL_AMBER);
+        ui_toast("Busy connecting, try again in a moment", UI_COL_ACCENT);
     }
 }
 
 static void on_sort_clicked(lv_event_t *)
 {
     s_sort = (sort_mode_t)((s_sort + 1) % SORT_COUNT);
-    lv_label_set_text_fmt(S.sort_btn_lbl, LV_SYMBOL_LIST " %s", SORT_NAMES[s_sort]);
+    lv_label_set_text_fmt(S.sort_btn_lbl, "Sort: %s", SORT_NAMES[s_sort]);
     rebuild_list();
 }
 
@@ -317,12 +312,12 @@ static lv_obj_t *small_button(lv_obj_t *parent, const char *text, lv_color_t col
     lv_obj_remove_style_all(b);
     lv_obj_set_height(b, 24);
     lv_obj_set_style_pad_hor(b, 10, 0);
-    lv_obj_set_style_radius(b, 12, 0);
-    lv_obj_set_style_border_color(b, col, 0);
+    lv_obj_set_style_radius(b, 3, 0);
+    lv_obj_set_style_border_color(b, UI_COL_BORDER, 0);
     lv_obj_set_style_border_width(b, 1, 0);
-    lv_obj_set_style_bg_color(b, col, 0);
-    lv_obj_set_style_bg_opa(b, LV_OPA_10, 0);
-    lv_obj_set_style_bg_opa(b, LV_OPA_40, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(b, UI_COL_CARD_HI, 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_STATE_PRESSED);
     lv_obj_set_width(b, LV_SIZE_CONTENT);
     lv_obj_t *l = ui_label(b, &lv_font_montserrat_12, col, text);
     lv_obj_center(l);
@@ -334,28 +329,28 @@ lv_obj_t *ui_scanner_create(void)
     memset(&S, 0, sizeof(S));
     S.first_build = true;
 
-    lv_obj_t *content = ui_screen_create("Scanner", UI_COL_CYAN, true);
+    lv_obj_t *content = ui_screen_create("Scanner", true);
     lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 
     S.count_lbl = ui_label(content, &lv_font_montserrat_14, UI_COL_TEXT, "scanning...");
-    lv_obj_align(S.count_lbl, LV_ALIGN_TOP_LEFT, 2, 4);
+    lv_obj_align(S.count_lbl, LV_ALIGN_TOP_LEFT, 2, 3);
 
     S.spinner = lv_spinner_create(content);
     lv_obj_set_size(S.spinner, 18, 18);
     lv_obj_set_style_arc_width(S.spinner, 3, LV_PART_MAIN);
     lv_obj_set_style_arc_width(S.spinner, 3, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(S.spinner, UI_COL_CYAN, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(S.spinner, UI_COL_ACCENT, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(S.spinner, UI_COL_BORDER, LV_PART_MAIN);
     lv_obj_align(S.spinner, LV_ALIGN_TOP_LEFT, 100, 3);
 
-    S.scan_btn = small_button(content, LV_SYMBOL_REFRESH, UI_COL_CYAN);
+    S.scan_btn = small_button(content, "Scan", UI_COL_TEXT);
     lv_obj_align(S.scan_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
     lv_obj_add_event_cb(S.scan_btn, on_scan_clicked, LV_EVENT_CLICKED, nullptr);
 
-    lv_obj_t *sort = small_button(content, "", UI_COL_PURPLE);
+    lv_obj_t *sort = small_button(content, "", UI_COL_TEXT);
     S.sort_btn_lbl = lv_obj_get_child(sort, 0);
-    lv_label_set_text_fmt(S.sort_btn_lbl, LV_SYMBOL_LIST " %s", SORT_NAMES[s_sort]);
-    lv_obj_align(sort, LV_ALIGN_TOP_RIGHT, -46, 0);
+    lv_label_set_text_fmt(S.sort_btn_lbl, "Sort: %s", SORT_NAMES[s_sort]);
+    lv_obj_align(sort, LV_ALIGN_TOP_RIGHT, -52, 0);
     lv_obj_add_event_cb(sort, on_sort_clicked, LV_EVENT_CLICKED, nullptr);
 
     S.list = lv_obj_create(content);
@@ -373,12 +368,12 @@ lv_obj_t *ui_scanner_create(void)
     lv_obj_remove_flag(S.empty, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_t *radar = lv_spinner_create(S.empty);
     lv_spinner_set_anim_params(radar, 1400, 90);
-    lv_obj_set_size(radar, 70, 70);
-    lv_obj_align(radar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_arc_color(radar, UI_COL_CYAN, LV_PART_INDICATOR);
+    lv_obj_set_size(radar, 48, 48);
+    lv_obj_align(radar, LV_ALIGN_TOP_MID, 0, 16);
+    lv_obj_set_style_arc_width(radar, 3, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(radar, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(radar, UI_COL_ACCENT, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(radar, UI_COL_BORDER, LV_PART_MAIN);
-    lv_obj_t *radar_icon = ui_label(radar, &lv_font_montserrat_20, UI_COL_CYAN, LV_SYMBOL_WIFI);
-    lv_obj_center(radar_icon);
     lv_obj_t *hint = ui_label(S.empty, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "Looking for networks...");
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -12);
 

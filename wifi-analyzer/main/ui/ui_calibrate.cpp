@@ -62,7 +62,7 @@ static void pulse_exec(void *obj, int32_t v)
 static void show_target(void)
 {
     lv_obj_set_pos(S.target, TARGET_X[S.step] - 15, TARGET_Y[S.step] - 15);
-    lv_color_t col = S.step == 3 ? UI_COL_GREEN : UI_COL_CYAN;
+    lv_color_t col = S.step == 3 ? UI_COL_GOOD : UI_COL_ACCENT;
     lv_obj_set_style_border_color(S.target, col, 0);
     lv_obj_set_style_shadow_color(S.target, col, 0);
     lv_obj_set_style_bg_color(S.target, col, 0);
@@ -81,7 +81,7 @@ static void show_target(void)
 static void finish(void)
 {
     lvgl_port_set_raw_touch_hook(nullptr);
-    ui_toast(LV_SYMBOL_OK "  Touch calibrated", UI_COL_GREEN);
+    ui_toast("Touch calibrated", UI_COL_GOOD);
     ui_go(UI_SCR_MENU);
 }
 
@@ -129,10 +129,10 @@ lv_obj_t *ui_calibrate_create(void)
 
     lv_obj_t *scr = lv_obj_create(nullptr);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(scr, lv_color_hex(0x03050C), 0);
+    lv_obj_set_style_bg_color(scr, UI_COL_BG, 0);
     lv_obj_add_event_cb(scr, on_delete, LV_EVENT_DELETE, nullptr);
 
-    S.title = ui_label(scr, &lv_font_montserrat_20, UI_COL_TEXT, LV_SYMBOL_GPS "  Touch calibration");
+    S.title = ui_label(scr, &lv_font_montserrat_20, UI_COL_TEXT, "Touch calibration");
     S.hint = ui_label(scr, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     lv_obj_t *tip = ui_label(scr, &lv_font_montserrat_10, UI_COL_TEXT_DIM, "a stylus or fingernail works best");
     lv_obj_align(tip, LV_ALIGN_BOTTOM_MID, 0, -40);

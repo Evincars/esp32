@@ -45,12 +45,14 @@ typedef struct {
 } lan_host_t;
 
 void wifi_mgr_init(void);
+esp_netif_t *wifi_mgr_netif(void);
 
 /* Access point scanning */
 bool wifi_mgr_scan_start(void);
 bool wifi_mgr_scanning(void);
 uint32_t wifi_mgr_scan_gen(void); /* bumps on each completed scan */
 int wifi_mgr_get_aps(wifi_ap_record_t *out, int max);
+int wifi_mgr_ap_count(void);
 
 /* Station connection */
 void wifi_mgr_connect(const char *ssid, const char *password);
@@ -73,6 +75,7 @@ bool wifi_mgr_lan_scan_start(void);
 bool wifi_mgr_lan_scanning(int *progress_pct);
 uint32_t wifi_mgr_lan_gen(void);
 int wifi_mgr_lan_hosts(lan_host_t *out, int max);
+int wifi_mgr_lan_host_count(void);
 
 /* Helpers shared by the UI */
 const char *wifi_auth_str(wifi_auth_mode_t mode);

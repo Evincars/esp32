@@ -1,6 +1,7 @@
 #include "board.h"
 
 #include "driver/ledc.h"
+#include "driver/rtc_io.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
@@ -8,12 +9,16 @@
 #include "esp_lcd_io_i80.h"
 #include "esp_lcd_panel_st7789.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "board";
 
 static adc_oneshot_unit_handle_t s_adc;
 static adc_cali_handle_t s_adc_cali;
 static adc_channel_t s_adc_channel;
+static bool s_backlight_ready;
 
 void board_power_init(void)
 {
@@ -23,6 +28,12 @@ void board_power_init(void)
     ESP_ERROR_CHECK(gpio_config(&io));
     gpio_set_level(PIN_PWR_EN, 1);
     gpio_set_level(PIN_PWR_ON, 1);
+    /* After deep sleep the pins are still latched; release them only once the
+       output registers hold the right levels so the battery latch never drops. */
+    gpio_hold_dis(PIN_PWR_EN);
+    gpio_hold_dis(PIN_PWR_ON);
+    gpio_hold_dis(PIN_LCD_BL);
+    gpio_deep_sleep_hold_dis();
 
     gpio_config_t btn = {};
     btn.pin_bit_mask = (1ULL << PIN_BUTTON_BOOT) | (1ULL << PIN_BUTTON_USER);
@@ -104,10 +115,12 @@ void board_backlight_init(void)
     ch.timer_sel = LEDC_TIMER_0;
     ch.duty = 0; /* stays dark until the first frame is drawn */
     ESP_ERROR_CHECK(ledc_channel_config(&ch));
+    s_backlight_ready = true;
 }
 
 void board_backlight_set(int percent)
 {
+    if (!s_backlight_ready) return;
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
     /* Perceptual (squared) curve so the low end of the slider is usable. */
@@ -181,4 +194,29 @@ int board_battery_percent(int mv)
 bool board_boot_button_pressed(void)
 {
     return gpio_get_level(PIN_BUTTON_BOOT) == 0;
+}
+
+void board_deep_sleep(void)
+{
+    if (s_backlight_ready) ledc_stop(BL_LEDC_MODE, BL_LEDC_CHANNEL, 0);
+    gpio_config_t bl = {};
+    bl.pin_bit_mask = 1ULL << PIN_LCD_BL;
+    bl.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&bl);
+    gpio_set_level(PIN_LCD_BL, 0);
+    gpio_set_level(PIN_PWR_ON, 0); /* LCD + touch */
+
+    gpio_hold_en(PIN_LCD_BL);
+    gpio_hold_en(PIN_PWR_ON);
+    gpio_hold_en(PIN_PWR_EN); /* stays high: on battery it keeps the board powered */
+    gpio_deep_sleep_hold_en();
+
+    esp_sleep_enable_ext0_wakeup(PIN_BUTTON_BOOT, 0);
+    rtc_gpio_pullup_en(PIN_BUTTON_BOOT);
+    rtc_gpio_pulldown_dis(PIN_BUTTON_BOOT);
+
+    /* don't wake straight away if BOOT is still held */
+    while (board_boot_button_pressed()) vTaskDelay(pdMS_TO_TICKS(20));
+    ESP_LOGI(TAG, "entering deep sleep");
+    esp_deep_sleep_start();
 }

@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiFi Toolkit</title>
+<style>
+:root{--bg:#0f1115;--surface:#171a20;--border:#2a2f38;--text:#e6e8ec;--dim:#8a919c;--accent:#4c8dff;--good:#3ccb8b;--bad:#e5534b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;padding:14px 16px;border-bottom:1px solid var(--border)}
+header h1{font-size:17px;margin:0;font-weight:600}
+header .meta{color:var(--dim);font-size:13px}
+header .right{margin-left:auto;color:var(--dim);font-size:13px;font-variant-numeric:tabular-nums}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;padding:12px 16px 32px;max-width:1400px;margin:0 auto}
+section{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;min-width:0}
+section.wide{grid-column:1/-1}
+h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px;font-weight:600;display:flex;align-items:center;gap:8px}
+h2 .aside{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13px}
+.kv dt{color:var(--dim)}
+.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+.tile{border:1px solid var(--border);border-radius:4px;padding:6px 8px}
+.tile .l{font-size:11px;color:var(--dim)}
+.tile .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.bar{height:5px;background:var(--border);border-radius:2px;overflow:hidden;margin:3px 0 8px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.barlabel{display:flex;justify-content:space-between;font-size:12px;color:var(--dim)}
+canvas{width:100%;height:70px;display:block}
+.table{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th{text-align:left;color:var(--dim);font-weight:500;border-bottom:1px solid var(--border);padding:4px 8px 4px 0;white-space:nowrap}
+td{border-bottom:1px solid var(--border);padding:4px 8px 4px 0;white-space:nowrap}
+td.wrap{white-space:normal;overflow-wrap:anywhere}
+tr.sel td{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+tbody tr{cursor:default}
+#pk tbody tr{cursor:pointer}
+.good{color:var(--good)}.bad{color:var(--bad)}.acc{color:var(--accent)}.dim{color:var(--dim)}
+.tag{font-size:11px;border:1px solid var(--border);border-radius:3px;padding:0 4px;color:var(--dim)}
+button{background:transparent;color:var(--text);border:1px solid var(--border);border-radius:3px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+input{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:3px 8px;font:inherit;font-size:12px;width:160px}
+.layers{display:grid;gap:8px;margin-top:10px}
+.layer{border:1px solid var(--border);border-radius:4px;padding:8px 10px}
+.layer h3{margin:0 0 6px;font-size:13px;font-weight:600;display:flex;gap:8px}
+.layer h3 .osi{color:var(--accent);min-width:110px}
+pre{margin:10px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dim);overflow-x:auto}
+.empty{color:var(--dim);font-size:13px;padding:6px 0}
+@media (max-width:560px){.tiles{grid-template-columns:repeat(2,1fr)}main{padding:10px}header{padding:12px 10px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>WiFi Toolkit</h1>
+  <span class="meta" id="dev">connecting...</span>
+  <span class="right" id="clock"></span>
+</header>
+<main>
+  <section>
+    <h2>System <span class="aside" id="uptime"></span></h2>
+    <div class="tiles">
+      <div class="tile"><div class="l">CPU 0</div><div class="v" id="cpu0">-</div></div>
+      <div class="tile"><div class="l">CPU 1</div><div class="v" id="cpu1">-</div></div>
+      <div class="tile"><div class="l">Die temp</div><div class="v" id="temp">-</div></div>
+      <div class="tile"><div class="l">Power</div><div class="v" id="batt">-</div></div>
+    </div>
+    <canvas id="chart" width="600" height="140"></canvas>
+    <div id="mem" style="margin-top:10px"></div>
+  </section>
+
+  <section>
+    <h2>Wi-Fi <span class="aside" id="wstate"></span></h2>
+    <dl class="kv" id="wifi"></dl>
+  </section>
+
+  <section class="wide">
+    <h2>Access points <span class="aside"><span id="apcount" class="dim"></span> <button id="rescan">Rescan</button></span></h2>
+    <div class="table"><table id="aps"><thead><tr><th>SSID</th><th>BSSID</th><th>Vendor</th><th>Ch</th><th>Width</th><th>RSSI</th><th>Security</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>LAN hosts <span class="aside dim" id="hoststate"></span></h2>
+    <div class="table"><table id="hosts"><thead><tr><th>IP</th><th>MAC</th><th>Vendor</th><th></th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Port scan <span class="aside dim" id="psstate"></span></h2>
+    <div class="table"><table id="ports"><thead><tr><th>Host</th><th>Port</th><th>Service</th><th>RTT</th><th>Banner</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="wide">
+    <h2>Packet capture <span class="aside"><span class="dim" id="pkstate"></span> <input id="pkfilter" placeholder="filter: proto, ip, text"></span></h2>
+    <div class="dim" id="pkstats" style="font-size:12px;margin-bottom:6px"></div>
+    <div class="table" style="max-height:360px;overflow-y:auto"><table id="pk"><thead><tr><th>No.</th><th>Time</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Len</th><th>Info</th></tr></thead><tbody></tbody></table></div>
+    <div id="detail"></div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const kb = b => (b / 1024).toFixed(0) + ' KB';
+const mb = b => (b / 1048576).toFixed(1) + ' MB';
+const css = document.documentElement.style;
+let themeName = '', pkLast = 0, pkRows = [], selSeq = 0;
+
+async function get(url) { const r = await fetch(url, {cache: 'no-store'}); if (!r.ok) throw new Error(r.status); return r.json(); }
+function rssiClass(r) { return r >= -60 ? 'good' : r >= -75 ? 'acc' : 'bad'; }
+function dur(s) { const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60; return (d ? d + 'd ' : '') + h + 'h ' + String(m).padStart(2, '0') + 'm'; }
+function bar(label, used, total, fmt) {
+  const pct = total ? Math.round(used * 100 / total) : 0;
+  return `<div class="barlabel"><span>${label}</span><span>${fmt(used)} / ${fmt(total)} (${pct}%)</span></div><div class="bar"><i style="width:${pct}%"></i></div>`;
+}
+
+function drawChart(h) {
+  const c = $('#chart'), g = c.getContext('2d'), W = c.width, H = c.height, cs = getComputedStyle(document.documentElement);
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = cs.getPropertyValue('--border'); g.lineWidth = 1;
+  for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(0, H * i / 4); g.lineTo(W, H * i / 4); g.stroke(); }
+  const line = (v, col, lo, hi) => {
+    if (!v.length) return;
+    g.strokeStyle = col; g.lineWidth = 2; g.beginPath();
+    v.forEach((y, i) => { const px = (i / 59) * W, py = H - (Math.min(Math.max(y, lo), hi) - lo) / (hi - lo) * (H - 4) - 2; i ? g.lineTo(px, py) : g.moveTo(px, py); });
+    g.stroke();
+  };
+  line(h.temp, cs.getPropertyValue('--dim'), 20, 80);
+  line(h.cpu1, cs.getPropertyValue('--good'), 0, 100);
+  line(h.cpu0, cs.getPropertyValue('--accent'), 0, 100);
+}
+
+async function status() {
+  const s = await get('/api/status');
+  if (s.theme.name !== themeName) {
+    themeName = s.theme.name;
+    for (const k of ['bg', 'surface', 'border', 'text', 'dim', 'accent', 'good', 'bad']) css.setProperty('--' + k, s.theme[k]);
+  }
+  const d = s.device, y = s.sys, w = s.wifi;
+  $('#dev').textContent = `${d.chip} rev ${Math.floor(d.rev / 100)}.${d.rev % 100} · ${d.cores} cores @ ${d.mhz} MHz · app ${d.version} · IDF ${d.idf}`;
+  $('#clock').textContent = s.time.valid ? `${s.time.local} (${s.time.zone})` : 'time not synced';
+  $('#uptime').textContent = 'up ' + dur(y.uptime);
+  $('#cpu0').textContent = y.cpu[0].toFixed(0) + '%';
+  $('#cpu1').textContent = y.cpu[1].toFixed(0) + '%';
+  $('#temp').textContent = y.temp.toFixed(1) + ' °C';
+  $('#batt').textContent = y.usb ? 'USB' : (y.batt_mv / 1000).toFixed(2) + ' V';
+  $('#mem').innerHTML = bar('Internal RAM', y.heap_total - y.heap_free, y.heap_total, kb) +
+    bar('PSRAM', y.psram_total - y.psram_free, y.psram_total, mb) +
+    bar('App partition', y.app_size, y.app_part, kb) +
+    `<div class="barlabel"><span>Flash ${mb(y.flash)} · lowest free RAM ${kb(y.heap_min)} · ${y.tasks} tasks · temp ${y.temp_min.toFixed(1)}–${y.temp_max.toFixed(1)} °C${y.usb ? '' : ' · battery ' + y.batt_pct + '%'}</span></div>`;
+  drawChart(s.hist);
+
+  const st = {connected: 'good', connecting: 'acc', failed: 'bad', idle: 'dim'}[w.state];
+  $('#wstate').innerHTML = `<span class="${st}">${esc(w.text)}</span>`;
+  const rows = w.state === 'connected' ? [
+    ['SSID', esc(w.ssid)], ['Signal', `<span class="${rssiClass(w.rssi)}">${w.rssi} dBm</span>`], ['Channel', w.channel],
+    ['Security', w.auth], ['BSSID', w.bssid], ['IPv4', w.ip], ['Netmask', w.mask], ['Gateway', w.gw], ['DNS', w.dns],
+    ['MAC', w.mac], ['Hostname', esc(w.hostname)], ['Dashboard requests', s.web.requests]] :
+    [['MAC', w.mac], ['Hostname', esc(w.hostname)]];
+  $('#wifi').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+async function aps() {
+  const a = await get('/api/aps');
+  a.aps.sort((x, y) => y.rssi - x.rssi);
+  $('#apcount').textContent = a.scanning ? 'scanning...' : a.aps.length + ' networks';
+  $('#aps tbody').innerHTML = a.aps.map(p => `<tr><td>${p.ssid ? esc(p.ssid) : '<span class="dim">(hidden)</span>'}</td><td>${p.bssid}</td><td class="dim">${esc(p.vendor)}</td><td>${p.ch}</td><td>${p.bw} MHz</td><td class="${rssiClass(p.rssi)}">${p.rssi}</td><td>${p.auth}${p.wps ? ' <span class="tag">WPS</span>' : ''}</td></tr>`).join('') ||
+    '<tr><td colspan="7" class="empty">No scan results yet</td></tr>';
+}
+
+async function hosts() {
+  const h = await get('/api/hosts');
+  $('#hoststate').textContent = h.scanning ? `sweeping ${h.progress}%` : h.hosts.length ? h.hosts.length + ' hosts' : '';
+  $('#hosts tbody').innerHTML = h.hosts.map(x => `<tr><td>${x.ip}</td><td>${x.mac}</td><td class="dim">${esc(x.vendor)}</td><td>${x.self ? '<span class="tag">this device</span>' : x.gw ? '<span class="tag">gateway</span>' : ''}</td></tr>`).join('') ||
+    '<tr><td colspan="4" class="empty">Run "Discover" on the device (Network → LAN hosts)</td></tr>';
+}
+
+async function ports() {
+  const p = await get('/api/ports');
+  $('#psstate').textContent = p.running ? `scanning host ${p.hosts_done + 1}/${p.hosts_total} · ${p.ports_done}/${p.ports_total} ports` :
+    p.hosts_total ? `${p.open.length} open on ${p.hosts_total} host(s) in ${(p.elapsed_ms / 1000).toFixed(1)} s` : '';
+  $('#ports tbody').innerHTML = p.open.map(o => `<tr><td>${o.ip}</td><td class="acc">${o.port}/tcp</td><td>${o.service}</td><td>${o.rtt} ms</td><td class="wrap dim">${esc(o.banner)}</td></tr>`).join('') ||
+    '<tr><td colspan="5" class="empty">No open ports found yet (start a scan on the device)</td></tr>';
+}
+
+function renderPackets() {
+  const f = $('#pkfilter').value.trim().toLowerCase();
+  const rows = f ? pkRows.filter(p => (p.proto + ' ' + p.src + ' ' + p.dst + ' ' + p.info).toLowerCase().includes(f)) : pkRows;
+  $('#pk tbody').innerHTML = rows.slice(-300).reverse().map(p => `<tr data-seq="${p.seq}" class="${p.seq === selSeq ? 'sel' : ''}"><td class="dim">${p.seq}</td><td class="dim">${(p.t / 1000).toFixed(3)}</td><td>${esc(p.src)}</td><td>${esc(p.dst)}</td><td class="${p.osi >= 5 ? 'acc' : p.osi === 4 ? 'good' : ''}">${esc(p.proto)}</td><td>${p.len}</td><td class="wrap">${esc(p.info)}</td></tr>`).join('') ||
+    '<tr><td colspan="7" class="empty">Start a capture on the device (Sniffer)</td></tr>';
+}
+
+async function packets() {
+  const p = await get('/api/packets?since=' + pkLast);
+  if (p.last < pkLast) pkRows = [];
+  for (const r of p.packets) pkRows.push(r);
+  if (pkRows.length > 600) pkRows = pkRows.slice(-600);
+  if (p.packets.length) pkLast = p.packets[p.packets.length - 1].seq;
+  const s = p.stats;
+  $('#pkstate').textContent = p.running ? `capturing (${p.mode === 'lan' ? 'LAN' : '802.11 ch ' + p.channel}, filter ${p.filter})` : 'stopped';
+  $('#pkstats').textContent = `${s.total} frames · ${kb(s.bytes)} · ARP ${s.arp} · ICMP ${s.icmp} · TCP ${s.tcp} · UDP ${s.udp} · DNS ${s.dns} · DHCP ${s.dhcp} · HTTP/TLS ${s.web} · 802.11 mgmt ${s.mgmt} · data ${s.data} · EAPOL ${s.eapol}`;
+  renderPackets();
+}
+
+async function showPacket(seq) {
+  selSeq = seq; renderPackets();
+  try {
+    const p = await get('/api/packet?seq=' + seq);
+    const hex = p.hex.match(/.{1,32}/g) || [];
+    const dump = hex.map((l, i) => {
+      const bytes = l.match(/../g), asc = bytes.map(b => { const c = parseInt(b, 16); return c >= 32 && c < 127 ? String.fromCharCode(c) : '.'; }).join('');
+      return (i * 16).toString(16).padStart(4, '0') + '  ' + bytes.join(' ').padEnd(47) + '  ' + esc(asc);
+    }).join('\n');
+    $('#detail').innerHTML = `<div class="layers">${p.layers.map(l => `<div class="layer"><h3><span class="osi">L${l.osi} ${l.osi_name}</span><span>${esc(l.name)}</span></h3><dl class="kv">${l.fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}</div><pre>${dump}</pre>`;
+  } catch (e) { $('#detail').innerHTML = '<div class="empty">That frame has already left the capture buffer.</div>'; }
+}
+
+$('#pk').addEventListener('click', e => { const tr = e.target.closest('tr[data-seq]'); if (tr) showPacket(+tr.dataset.seq); });
+$('#pkfilter').addEventListener('input', renderPackets);
+$('#rescan').addEventListener('click', () => fetch('/api/scan', {method: 'POST'}).then(aps));
+
+function every(fn, ms) { const run = () => fn().catch(() => {}).finally(() => setTimeout(run, ms)); run(); }
+every(status, 2000);
+every(aps, 5000);
+every(hosts, 4000);
+every(ports, 2000);
+every(packets, 1500);
+</script>
+</body>
+</html>

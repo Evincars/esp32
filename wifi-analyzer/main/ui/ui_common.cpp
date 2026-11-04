@@ -1,43 +1,84 @@
 #include <cstdio>
+#include <ctime>
 
+#include "app_settings.h"
 #include "board.h"
+#include "boot_mode.h"
+#include "sysmon.h"
+#include "time_sync.h"
 #include "ui.h"
 #include "wifi_mgr.h"
+
+/* ---------------- palettes ---------------- */
+
+const ui_palette_t UI_PALETTES[UI_PALETTE_COUNT] = {
+    {"Graphite", 0x0F1115, 0x0A0C0F, 0x171A20, 0x20242C, 0x2A2F38, 0xE6E8EC, 0x8A919C, 0x4C8DFF, 0x3CCB8B, 0xE5534B},
+    {"Midnight", 0x0A1020, 0x070B16, 0x111A2E, 0x18233B, 0x24324F, 0xE2E8F4, 0x7E8BA5, 0x2BC4E0, 0x4ADE9A, 0xF06A6A},
+    {"Ember", 0x14110F, 0x0E0C0A, 0x1D1916, 0x27221E, 0x3A322C, 0xEDE7E1, 0x9C9088, 0xF0A33A, 0x9CCB5A, 0xE5574A},
+};
+const ui_palette_t *g_pal = &UI_PALETTES[0];
+
+void ui_theme_apply(int index)
+{
+    if (index < 0 || index >= UI_PALETTE_COUNT) index = 0;
+    g_pal = &UI_PALETTES[index];
+    lv_display_t *disp = lv_display_get_default();
+    lv_theme_t *th = lv_theme_default_init(disp, UI_COL_ACCENT, UI_COL_GOOD, true, &lv_font_montserrat_14);
+    lv_display_set_theme(disp, th);
+}
+
+/* ---------------- navigation ---------------- */
 
 static ui_screen_id_t s_current = UI_SCR_MENU;
 static ui_screen_id_t s_back_target = UI_SCR_MENU;
 
 /* Header widgets of the screen that is currently being shown. */
 static lv_obj_t *s_hdr_screen;
-static lv_obj_t *s_hdr_wifi;
+static lv_obj_t *s_hdr_time;
+static lv_obj_t *s_hdr_net;
 static lv_obj_t *s_hdr_batt;
 static lv_obj_t *s_toast;
 
-/* ---------------- navigation ---------------- */
+static lv_obj_t *create_screen(ui_screen_id_t id)
+{
+    switch (id) {
+    case UI_SCR_SCANNER: return ui_scanner_create();
+    case UI_SCR_CHANNELS: return ui_channels_create();
+    case UI_SCR_NETWORK: return ui_network_create();
+    case UI_SCR_PORTS: return ui_ports_create();
+    case UI_SCR_SNIFFER: return ui_sniffer_create();
+    case UI_SCR_PACKET: return ui_packet_create();
+    case UI_SCR_WEB: return ui_web_create();
+    case UI_SCR_SYSTEM: return ui_system_create();
+    case UI_SCR_CLOCK: return ui_clock_create();
+    case UI_SCR_SETTINGS: return ui_settings_create();
+    case UI_SCR_ABOUT: return ui_about_create();
+    case UI_SCR_CALIBRATE: return ui_calibrate_create();
+    default: return ui_menu_create();
+    }
+}
+
+static void set_current(ui_screen_id_t id)
+{
+    s_current = id;
+    /* lets the next RST press continue from the view that is on screen */
+    boot_mode_note_view(id == UI_SCR_SYSTEM ? BOOT_VIEW_MONITOR : id == UI_SCR_CLOCK ? BOOT_VIEW_CLOCK : BOOT_VIEW_MENU);
+}
 
 void ui_load(lv_obj_t *scr, bool forward)
 {
-    lv_screen_load_anim(scr, forward ? LV_SCR_LOAD_ANIM_MOVE_LEFT : LV_SCR_LOAD_ANIM_MOVE_RIGHT, 260, 0, true);
+    lv_screen_load_anim(scr, forward ? LV_SCR_LOAD_ANIM_MOVE_LEFT : LV_SCR_LOAD_ANIM_MOVE_RIGHT, 220, 0, true);
 }
 
 void ui_go(ui_screen_id_t id)
 {
-    lv_obj_t *scr = nullptr;
-    switch (id) {
-    case UI_SCR_MENU: scr = ui_menu_create(); break;
-    case UI_SCR_SCANNER: scr = ui_scanner_create(); break;
-    case UI_SCR_CHANNELS: scr = ui_channels_create(); break;
-    case UI_SCR_NETWORK: scr = ui_network_create(); break;
-    case UI_SCR_SYSTEM: scr = ui_system_create(); break;
-    case UI_SCR_SETTINGS: scr = ui_settings_create(); break;
-    case UI_SCR_ABOUT: scr = ui_about_create(); break;
-    case UI_SCR_CALIBRATE:
-        scr = ui_calibrate_create();
-        s_current = id;
-        lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, true);
+    s_back_target = UI_SCR_MENU; /* screens without the shared header don't reset it themselves */
+    set_current(id);
+    lv_obj_t *scr = create_screen(id);
+    if (id == UI_SCR_CALIBRATE || id == UI_SCR_CLOCK) {
+        lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_IN, 250, 0, true);
         return;
     }
-    s_current = id;
     ui_load(scr, id != UI_SCR_MENU);
 }
 
@@ -45,19 +86,8 @@ void ui_back(void)
 {
     ui_screen_id_t target = s_back_target;
     s_back_target = UI_SCR_MENU;
-    if (target == UI_SCR_MENU) {
-        ui_go(UI_SCR_MENU);
-        return;
-    }
-    /* going "back" to a sub-screen still slides to the right */
-    s_current = target;
-    lv_obj_t *scr = nullptr;
-    switch (target) {
-    case UI_SCR_SCANNER: scr = ui_scanner_create(); break;
-    case UI_SCR_NETWORK: scr = ui_network_create(); break;
-    default: scr = ui_menu_create(); s_current = UI_SCR_MENU; break;
-    }
-    ui_load(scr, false);
+    set_current(target);
+    ui_load(create_screen(target), false);
 }
 
 void ui_set_back_target(ui_screen_id_t id)
@@ -65,55 +95,74 @@ void ui_set_back_target(ui_screen_id_t id)
     s_back_target = id;
 }
 
+void ui_reload(void)
+{
+    ui_screen_id_t back = s_back_target;
+    lv_obj_t *scr = create_screen(s_current);
+    s_back_target = back;
+    lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_NONE, 0, 0, true);
+}
+
 /* ---------------- header status ---------------- */
 
 static void update_status(lv_timer_t *)
 {
     static uint32_t tick;
-    static int batt_mv;
-    if (!s_hdr_wifi) return;
-
-    switch (wifi_mgr_state()) {
-    case WIFI_ST_CONNECTED:
-        lv_obj_set_style_text_color(s_hdr_wifi, UI_COL_GREEN, 0);
-        lv_obj_set_style_text_opa(s_hdr_wifi, LV_OPA_COVER, 0);
-        break;
-    case WIFI_ST_CONNECTING:
-        lv_obj_set_style_text_color(s_hdr_wifi, UI_COL_AMBER, 0);
-        lv_obj_set_style_text_opa(s_hdr_wifi, (tick & 1) ? LV_OPA_30 : LV_OPA_COVER, 0);
-        break;
-    case WIFI_ST_FAILED:
-        lv_obj_set_style_text_color(s_hdr_wifi, UI_COL_RED, 0);
-        lv_obj_set_style_text_opa(s_hdr_wifi, LV_OPA_COVER, 0);
-        break;
-    default:
-        lv_obj_set_style_text_color(s_hdr_wifi, UI_COL_TEXT_DIM, 0);
-        lv_obj_set_style_text_opa(s_hdr_wifi, LV_OPA_50, 0);
-        break;
-    }
-
-    if (tick % 10 == 0 || batt_mv == 0) batt_mv = board_battery_mv();
+    if (!s_hdr_net) return;
     tick++;
 
-    const char *sym;
-    lv_color_t col = UI_COL_TEXT_DIM;
-    if (batt_mv > 4300 || batt_mv < 2500) {
-        sym = LV_SYMBOL_USB; /* no battery fitted, running from USB */
-    } else {
-        int pct = board_battery_percent(batt_mv);
-        sym = pct > 80 ? LV_SYMBOL_BATTERY_FULL : pct > 55 ? LV_SYMBOL_BATTERY_3 : pct > 30 ? LV_SYMBOL_BATTERY_2
-              : pct > 10 ? LV_SYMBOL_BATTERY_1 : LV_SYMBOL_BATTERY_EMPTY;
-        if (pct <= 10) col = UI_COL_RED;
+    wifi_conn_info_t info;
+    switch (wifi_mgr_state()) {
+    case WIFI_ST_CONNECTED:
+        if (wifi_mgr_conn_info(&info)) {
+            lv_label_set_text_fmt(s_hdr_net, "%d dBm", info.rssi);
+            lv_obj_set_style_text_color(s_hdr_net, ui_rssi_color(info.rssi), 0);
+        }
+        lv_obj_set_style_text_opa(s_hdr_net, LV_OPA_COVER, 0);
+        break;
+    case WIFI_ST_CONNECTING:
+        lv_label_set_text(s_hdr_net, "joining");
+        lv_obj_set_style_text_color(s_hdr_net, UI_COL_ACCENT, 0);
+        lv_obj_set_style_text_opa(s_hdr_net, (tick & 1) ? LV_OPA_40 : LV_OPA_COVER, 0);
+        break;
+    case WIFI_ST_FAILED:
+        lv_label_set_text(s_hdr_net, "failed");
+        lv_obj_set_style_text_color(s_hdr_net, UI_COL_BAD, 0);
+        lv_obj_set_style_text_opa(s_hdr_net, LV_OPA_COVER, 0);
+        break;
+    default:
+        lv_label_set_text(s_hdr_net, "offline");
+        lv_obj_set_style_text_color(s_hdr_net, UI_COL_TEXT_DIM, 0);
+        lv_obj_set_style_text_opa(s_hdr_net, LV_OPA_COVER, 0);
+        break;
     }
-    lv_label_set_text(s_hdr_batt, sym);
-    lv_obj_set_style_text_color(s_hdr_batt, col, 0);
+
+    sysmon_t s;
+    sysmon_get(&s);
+    if (s.on_usb) {
+        lv_label_set_text(s_hdr_batt, "USB");
+        lv_obj_set_style_text_color(s_hdr_batt, UI_COL_TEXT_DIM, 0);
+    } else {
+        lv_label_set_text_fmt(s_hdr_batt, "%d%%", s.batt_pct);
+        lv_obj_set_style_text_color(s_hdr_batt, s.batt_pct <= 10 ? UI_COL_BAD : UI_COL_TEXT_DIM, 0);
+    }
+
+    if (time_sync_valid()) {
+        time_t now = time(nullptr);
+        struct tm tm;
+        localtime_r(&now, &tm);
+        lv_label_set_text_fmt(s_hdr_time, "%02d:%02d", tm.tm_hour, tm.tm_min);
+    } else {
+        lv_label_set_text(s_hdr_time, "");
+    }
 }
 
 static void on_screen_delete(lv_event_t *e)
 {
     if (lv_event_get_target(e) == s_hdr_screen) {
         s_hdr_screen = nullptr;
-        s_hdr_wifi = nullptr;
+        s_hdr_time = nullptr;
+        s_hdr_net = nullptr;
         s_hdr_batt = nullptr;
     }
 }
@@ -123,14 +172,12 @@ static void on_back_clicked(lv_event_t *)
     ui_back();
 }
 
-lv_obj_t *ui_screen_create(const char *title, lv_color_t accent, bool with_back)
+lv_obj_t *ui_screen_create(const char *title, bool with_back)
 {
     s_back_target = UI_SCR_MENU;
     lv_obj_t *scr = lv_obj_create(nullptr);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(scr, UI_COL_BG_TOP, 0);
-    lv_obj_set_style_bg_grad_color(scr, UI_COL_BG_BOTTOM, 0);
-    lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_color(scr, UI_COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_add_event_cb(scr, on_screen_delete, LV_EVENT_DELETE, nullptr);
 
@@ -139,40 +186,37 @@ lv_obj_t *ui_screen_create(const char *title, lv_color_t accent, bool with_back)
     lv_obj_set_size(hdr, LV_PCT(100), UI_HEADER_H);
     lv_obj_set_style_bg_color(hdr, UI_COL_HEADER, 0);
     lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(hdr, UI_COL_BORDER, 0);
+    lv_obj_set_style_border_width(hdr, 1, 0);
+    lv_obj_set_style_border_side(hdr, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_remove_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
-
-    /* glowing accent line under the header, fading out to the right */
-    lv_obj_t *line = lv_obj_create(scr);
-    lv_obj_remove_style_all(line);
-    lv_obj_set_size(line, LV_PCT(100), 2);
-    lv_obj_set_pos(line, 0, UI_HEADER_H - 2);
-    lv_obj_set_style_bg_color(line, accent, 0);
-    lv_obj_set_style_bg_grad_color(line, accent, 0);
-    lv_obj_set_style_bg_grad_dir(line, LV_GRAD_DIR_HOR, 0);
-    lv_obj_set_style_bg_main_opa(line, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_grad_opa(line, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_bg_opa(line, LV_OPA_COVER, 0);
 
     int title_x = 10;
     if (with_back) {
         lv_obj_t *back = lv_button_create(hdr);
         lv_obj_remove_style_all(back);
-        lv_obj_set_size(back, 44, UI_HEADER_H);
-        lv_obj_set_style_bg_color(back, accent, LV_STATE_PRESSED);
-        lv_obj_set_style_bg_opa(back, LV_OPA_30, LV_STATE_PRESSED);
+        lv_obj_set_size(back, 34, UI_HEADER_H - 1);
+        lv_obj_set_style_bg_color(back, UI_COL_CARD_HI, LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(back, LV_OPA_COVER, LV_STATE_PRESSED);
         lv_obj_add_event_cb(back, on_back_clicked, LV_EVENT_CLICKED, nullptr);
-        lv_obj_t *arrow = ui_label(back, &lv_font_montserrat_16, accent, LV_SYMBOL_LEFT);
+        lv_obj_t *arrow = ui_label(back, &lv_font_montserrat_14, UI_COL_TEXT_DIM, LV_SYMBOL_LEFT);
         lv_obj_center(arrow);
-        title_x = 44;
+        title_x = 34;
     }
 
-    lv_obj_t *t = ui_label(hdr, &lv_font_montserrat_16, UI_COL_TEXT, title);
-    lv_obj_align(t, LV_ALIGN_LEFT_MID, title_x, -1);
+    lv_obj_t *t = ui_label(hdr, &lv_font_montserrat_14, UI_COL_TEXT, title);
+    lv_obj_align(t, LV_ALIGN_LEFT_MID, title_x, 0);
 
-    s_hdr_batt = ui_label(hdr, &lv_font_montserrat_14, UI_COL_TEXT_DIM, LV_SYMBOL_BATTERY_FULL);
-    lv_obj_align(s_hdr_batt, LV_ALIGN_RIGHT_MID, -8, -1);
-    s_hdr_wifi = ui_label(hdr, &lv_font_montserrat_14, UI_COL_TEXT_DIM, LV_SYMBOL_WIFI);
-    lv_obj_align(s_hdr_wifi, LV_ALIGN_RIGHT_MID, -36, -1);
+    lv_obj_t *status = lv_obj_create(hdr);
+    lv_obj_remove_style_all(status);
+    lv_obj_set_size(status, LV_SIZE_CONTENT, LV_PCT(100));
+    lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(status, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(status, 10, 0);
+    lv_obj_align(status, LV_ALIGN_RIGHT_MID, -8, 0);
+    s_hdr_time = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
+    s_hdr_net = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
+    s_hdr_batt = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     s_hdr_screen = scr;
     update_status(nullptr);
 
@@ -195,8 +239,8 @@ lv_obj_t *ui_card(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(c, UI_COL_BORDER, 0);
     lv_obj_set_style_border_width(c, 1, 0);
-    lv_obj_set_style_radius(c, 10, 0);
-    lv_obj_set_style_pad_all(c, 8, 0);
+    lv_obj_set_style_radius(c, UI_RADIUS, 0);
+    lv_obj_set_style_pad_all(c, 6, 0);
     lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLLABLE);
     return c;
 }
@@ -213,21 +257,42 @@ lv_obj_t *ui_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, co
 lv_obj_t *ui_button(lv_obj_t *parent, const char *text, lv_color_t color)
 {
     lv_obj_t *b = lv_button_create(parent);
+    lv_obj_remove_style_all(b);
     lv_obj_set_style_bg_color(b, color, 0);
-    lv_obj_set_style_bg_color(b, lv_color_lighten(color, LV_OPA_30), LV_STATE_PRESSED);
-    lv_obj_set_style_radius(b, 8, 0);
-    lv_obj_set_style_shadow_color(b, color, 0);
-    lv_obj_set_style_shadow_width(b, 12, 0);
-    lv_obj_set_style_shadow_opa(b, LV_OPA_40, 0);
-    lv_obj_set_style_shadow_spread(b, 0, 0);
-    lv_obj_set_style_pad_ver(b, 7, 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(b, lv_color_lighten(color, LV_OPA_20), LV_STATE_PRESSED);
+    lv_obj_set_style_radius(b, 3, 0);
+    lv_obj_set_style_pad_ver(b, 6, 0);
     lv_obj_set_style_pad_hor(b, 12, 0);
-    lv_obj_set_style_transform_width(b, -2, LV_STATE_PRESSED);
-    lv_obj_set_style_transform_height(b, -2, LV_STATE_PRESSED);
     lv_obj_set_style_opa(b, LV_OPA_40, LV_STATE_DISABLED);
-    lv_obj_t *l = ui_label(b, &lv_font_montserrat_14, lv_color_hex(0x071022), text);
+    lv_obj_t *l = ui_label(b, &lv_font_montserrat_14, UI_COL_ON_FILL, text);
     lv_obj_center(l);
     return b;
+}
+
+lv_obj_t *ui_button_outline(lv_obj_t *parent, const char *text)
+{
+    lv_obj_t *b = lv_button_create(parent);
+    lv_obj_remove_style_all(b);
+    lv_obj_set_style_bg_color(b, UI_COL_CARD_HI, 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_STATE_PRESSED);
+    lv_obj_set_style_border_color(b, UI_COL_BORDER, 0);
+    lv_obj_set_style_border_width(b, 1, 0);
+    lv_obj_set_style_radius(b, 3, 0);
+    lv_obj_set_style_pad_ver(b, 6, 0);
+    lv_obj_set_style_pad_hor(b, 12, 0);
+    lv_obj_set_style_opa(b, LV_OPA_40, LV_STATE_DISABLED);
+    lv_obj_t *l = ui_label(b, &lv_font_montserrat_14, UI_COL_TEXT, text);
+    lv_obj_center(l);
+    return b;
+}
+
+lv_obj_t *ui_caption(lv_obj_t *parent, const char *text)
+{
+    lv_obj_t *l = ui_label(parent, &lv_font_montserrat_10, UI_COL_TEXT_DIM, text);
+    lv_obj_set_style_text_letter_space(l, 1, 0);
+    return l;
 }
 
 lv_obj_t *ui_kv_row(lv_obj_t *parent, const char *key)
@@ -235,18 +300,31 @@ lv_obj_t *ui_kv_row(lv_obj_t *parent, const char *key)
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
     lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_ver(row, 2, 0);
+    lv_obj_set_style_pad_ver(row, 1, 0);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *k = ui_label(row, &lv_font_montserrat_12, UI_COL_TEXT_DIM, key);
     lv_obj_align(k, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *v = ui_label(row, &lv_font_montserrat_12, UI_COL_TEXT, "-");
-    lv_obj_set_width(v, LV_PCT(64));
+    lv_obj_set_width(v, LV_PCT(62));
     lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_align(v, LV_ALIGN_RIGHT_MID, 0, 0);
     return v;
+}
+
+lv_obj_t *ui_bar(lv_obj_t *parent, int32_t w, int32_t h)
+{
+    lv_obj_t *bar = lv_bar_create(parent);
+    lv_obj_set_size(bar, w, h);
+    lv_obj_set_style_radius(bar, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar, 1, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(bar, UI_COL_BORDER, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(bar, UI_COL_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_anim_duration(bar, 400, 0);
+    return bar;
 }
 
 static void on_owner_delete(lv_event_t *e)
@@ -261,13 +339,50 @@ lv_timer_t *ui_screen_timer(lv_obj_t *owner, lv_timer_cb_t cb, uint32_t period_m
     return t;
 }
 
+/* ---------------- dialogs ---------------- */
+
+static void on_confirm_yes(lv_event_t *e)
+{
+    lv_obj_t *mb = (lv_obj_t *)lv_event_get_user_data(e);
+    auto cb = (void (*)(void))lv_obj_get_user_data(mb);
+    lv_msgbox_close(mb);
+    if (cb) cb();
+}
+
+static void on_confirm_no(lv_event_t *e)
+{
+    lv_msgbox_close((lv_obj_t *)lv_event_get_user_data(e));
+}
+
+void ui_confirm(const char *title, const char *text, const char *yes, lv_color_t yes_color, void (*on_yes)(void))
+{
+    lv_obj_t *mb = lv_msgbox_create(nullptr);
+    lv_obj_set_width(mb, 260);
+    lv_obj_set_user_data(mb, (void *)on_yes);
+    lv_obj_set_style_bg_color(mb, UI_COL_CARD, 0);
+    lv_obj_set_style_border_color(mb, UI_COL_BORDER, 0);
+    lv_obj_set_style_border_width(mb, 1, 0);
+    lv_obj_set_style_radius(mb, UI_RADIUS, 0);
+    lv_msgbox_add_title(mb, title);
+    lv_msgbox_add_text(mb, text);
+    lv_obj_t *no = lv_msgbox_add_footer_button(mb, "Cancel");
+    lv_obj_set_style_radius(no, 3, 0);
+    lv_obj_set_style_bg_color(no, UI_COL_CARD_HI, 0);
+    lv_obj_add_event_cb(no, on_confirm_no, LV_EVENT_CLICKED, mb);
+    lv_obj_t *ok = lv_msgbox_add_footer_button(mb, yes);
+    lv_obj_set_style_radius(ok, 3, 0);
+    lv_obj_set_style_bg_color(ok, yes_color, 0);
+    lv_obj_set_style_text_color(ok, UI_COL_ON_FILL, 0);
+    lv_obj_add_event_cb(ok, on_confirm_yes, LV_EVENT_CLICKED, mb);
+}
+
 /* ---------------- effects ---------------- */
 
 static void enter_exec(void *obj, int32_t v)
 {
     /* v: 0 -> 256 */
     lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)(v >= 256 ? 255 : v), 0);
-    lv_obj_set_style_translate_y((lv_obj_t *)obj, 18 - v * 18 / 256, 0);
+    lv_obj_set_style_translate_y((lv_obj_t *)obj, 8 - v * 8 / 256, 0);
 }
 
 void ui_anim_enter(lv_obj_t *obj, uint32_t delay_ms)
@@ -278,7 +393,7 @@ void ui_anim_enter(lv_obj_t *obj, uint32_t delay_ms)
     lv_anim_set_var(&a, obj);
     lv_anim_set_exec_cb(&a, enter_exec);
     lv_anim_set_values(&a, 0, 256);
-    lv_anim_set_duration(&a, 380);
+    lv_anim_set_duration(&a, 240);
     lv_anim_set_delay(&a, delay_ms);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
@@ -296,11 +411,6 @@ static void toast_opa_exec(void *obj, int32_t v)
     lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
 }
 
-static void toast_y_exec(void *obj, int32_t v)
-{
-    lv_obj_set_style_translate_y((lv_obj_t *)obj, v, 0);
-}
-
 void ui_toast(const char *text, lv_color_t color)
 {
     if (s_toast) {
@@ -314,34 +424,26 @@ void ui_toast(const char *text, lv_color_t color)
     lv_obj_set_style_max_width(t, 300, 0);
     lv_obj_set_style_bg_color(t, UI_COL_CARD_HI, 0);
     lv_obj_set_style_bg_opa(t, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(t, 16, 0);
+    lv_obj_set_style_radius(t, UI_RADIUS, 0);
     lv_obj_set_style_border_color(t, color, 0);
     lv_obj_set_style_border_width(t, 1, 0);
-    lv_obj_set_style_shadow_color(t, color, 0);
-    lv_obj_set_style_shadow_width(t, 18, 0);
-    lv_obj_set_style_shadow_opa(t, LV_OPA_50, 0);
-    lv_obj_set_style_pad_hor(t, 14, 0);
+    lv_obj_set_style_border_side(t, LV_BORDER_SIDE_LEFT, 0);
+    lv_obj_set_style_border_width(t, 3, 0);
+    lv_obj_set_style_pad_hor(t, 12, 0);
     lv_obj_set_style_pad_ver(t, 7, 0);
     lv_obj_remove_flag(t, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_t *l = ui_label(t, &lv_font_montserrat_14, UI_COL_TEXT, text);
     lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_max_width(l, 272, 0);
     lv_obj_align(t, LV_ALIGN_BOTTOM_MID, 0, -10);
+    ui_anim_enter(t, 0);
 
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, t);
-    lv_anim_set_exec_cb(&a, toast_y_exec);
-    lv_anim_set_values(&a, 60, 0);
-    lv_anim_set_duration(&a, 320);
-    lv_anim_set_path_cb(&a, lv_anim_path_overshoot);
-    lv_anim_start(&a);
-
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, t);
     lv_anim_set_exec_cb(&a, toast_opa_exec);
     lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
-    lv_anim_set_duration(&a, 400);
+    lv_anim_set_duration(&a, 300);
     lv_anim_set_delay(&a, 2200);
     lv_anim_set_completed_cb(&a, toast_out_ready);
     lv_anim_start(&a);
@@ -351,24 +453,22 @@ void ui_toast(const char *text, lv_color_t color)
 
 lv_color_t ui_rssi_color(int rssi)
 {
-    if (rssi >= -55) return UI_COL_GREEN;
-    if (rssi >= -67) return UI_COL_CYAN;
-    if (rssi >= -78) return UI_COL_AMBER;
-    return UI_COL_RED;
+    if (rssi >= -60) return UI_COL_GOOD;
+    if (rssi >= -75) return UI_COL_ACCENT;
+    return UI_COL_BAD;
 }
 
 lv_obj_t *ui_signal_bars(lv_obj_t *parent, int rssi)
 {
     lv_obj_t *box = lv_obj_create(parent);
     lv_obj_remove_style_all(box);
-    lv_obj_set_size(box, 19, 16);
+    lv_obj_set_size(box, 15, 13);
     lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE);
     for (int i = 0; i < 4; i++) {
         lv_obj_t *bar = lv_obj_create(box);
         lv_obj_remove_style_all(bar);
-        lv_obj_set_size(bar, 3, 4 + i * 4);
-        lv_obj_align(bar, LV_ALIGN_BOTTOM_LEFT, i * 5, 0);
-        lv_obj_set_style_radius(bar, 1, 0);
+        lv_obj_set_size(bar, 3, 4 + i * 3);
+        lv_obj_align(bar, LV_ALIGN_BOTTOM_LEFT, i * 4, 0);
         lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
         lv_obj_remove_flag(bar, LV_OBJ_FLAG_CLICKABLE);
     }
@@ -402,14 +502,17 @@ static void boot_button_poll(lv_timer_t *)
     was_down = down;
 }
 
-void ui_init(bool need_calibration)
+void ui_init(bool need_calibration, ui_screen_id_t start)
 {
-    lv_display_t *disp = lv_display_get_default();
-    lv_theme_t *th = lv_theme_default_init(disp, UI_COL_CYAN, UI_COL_MAGENTA, true, &lv_font_montserrat_14);
-    lv_display_set_theme(disp, th);
-
+    ui_theme_apply(g_settings.palette);
     lv_timer_create(update_status, 1000, nullptr);
     lv_timer_create(boot_button_poll, 50, nullptr);
 
-    ui_splash_show(need_calibration);
+    if (start != UI_SCR_MENU && !need_calibration) {
+        /* RST shortcut: skip the splash so the view shows up right away */
+        set_current(start);
+        lv_screen_load(create_screen(start));
+        return;
+    }
+    ui_splash_show(need_calibration, start);
 }

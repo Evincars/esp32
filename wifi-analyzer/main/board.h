@@ -59,3 +59,6 @@ int board_battery_mv(void);
 int board_battery_percent(int mv);
 
 bool board_boot_button_pressed(void);
+
+/* Display and touch power off, then deep sleep until BOOT is pressed (RST also wakes). */
+[[noreturn]] void board_deep_sleep(void);

@@ -23,8 +23,6 @@
 #define HILL_SEGMENTS 12
 #define LABELED_APS 10
 
-static const uint32_t PALETTE[] = {0x00E0FF, 0xFF3D9A, 0x9B6CFF, 0x22E39A, 0xFFB020,
-                                   0x5B8CFF, 0xFF6B3D, 0x3DFFD8, 0xE4FF3D, 0xC86BFF};
 
 static struct {
     lv_obj_t *graph;
@@ -41,11 +39,20 @@ static struct {
     bool has_highlight;
 } S;
 
+/* Curves get tones mixed from the palette's accent and good colors, so the graph
+   stays within the active theme while neighbours remain distinguishable. */
 static lv_color_t ap_color(const wifi_ap_record_t *ap)
 {
     uint32_t h = 2166136261u;
     for (int i = 0; i < 6; i++) h = (h ^ ap->bssid[i]) * 16777619u;
-    return lv_color_hex(PALETTE[h % (sizeof(PALETTE) / sizeof(PALETTE[0]))]);
+    switch (h % 6) {
+    case 0: return UI_COL_ACCENT;
+    case 1: return UI_COL_GOOD;
+    case 2: return lv_color_mix(UI_COL_ACCENT, UI_COL_GOOD, LV_OPA_50);
+    case 3: return lv_color_mix(UI_COL_ACCENT, UI_COL_TEXT, LV_OPA_60);
+    case 4: return lv_color_mix(UI_COL_GOOD, UI_COL_TEXT, LV_OPA_60);
+    default: return lv_color_mix(UI_COL_TEXT, UI_COL_ACCENT, LV_OPA_70);
+    }
 }
 
 static float drawn_rssi(int i)
@@ -320,7 +327,7 @@ static void update_strip_and_info(int *best_ch)
     for (int c = CH_MIN; c <= CH_MAX; c++) max_score = std::max(max_score, score[c]);
     for (int c = CH_MIN; c <= CH_MAX; c++) {
         float f = score[c] / max_score;
-        lv_color_t col = f < 0.33f ? UI_COL_GREEN : f < 0.66f ? UI_COL_AMBER : UI_COL_RED;
+        lv_color_t col = f < 0.33f ? UI_COL_GOOD : f < 0.66f ? UI_COL_ACCENT : UI_COL_BAD;
         lv_obj_set_style_bg_color(S.strip_cells[c - 1], col, 0);
         lv_obj_set_style_bg_opa(S.strip_cells[c - 1], (lv_opa_t)(40 + f * 150), 0);
         if (count[c]) lv_label_set_text_fmt(S.strip_counts[c - 1], "%d", count[c]);
@@ -351,7 +358,7 @@ static void update_info(void)
     int best;
     update_strip_and_info(&best);
     if (S.ap_count) {
-        lv_label_set_text_fmt(S.info, "%d APs   " LV_SYMBOL_RIGHT " best channel: %d   (tap a curve)", S.ap_count, best);
+        lv_label_set_text_fmt(S.info, "%d APs   best channel: %d   (tap a curve)", S.ap_count, best);
     } else {
         lv_label_set_text(S.info, "Scanning the 2.4 GHz band...");
     }
@@ -423,7 +430,7 @@ lv_obj_t *ui_channels_create(void)
     lv_anim_delete(&S, t_exec);
     memset(&S, 0, sizeof(S));
 
-    lv_obj_t *content = ui_screen_create("Channel Graph", UI_COL_PURPLE, true);
+    lv_obj_t *content = ui_screen_create("Channel graph", true);
     lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(content, on_delete, LV_EVENT_DELETE, nullptr);
 
@@ -459,7 +466,7 @@ lv_obj_t *ui_channels_create(void)
         lv_obj_remove_style_all(cell);
         lv_obj_set_size(cell, cw, STRIP_H);
         lv_obj_set_pos(cell, x - cw / 2, 0);
-        lv_obj_set_style_radius(cell, 4, 0);
+        lv_obj_set_style_radius(cell, 2, 0);
         lv_obj_set_style_bg_color(cell, UI_COL_BORDER, 0);
         lv_obj_set_style_bg_opa(cell, LV_OPA_COVER, 0);
         S.strip_cells[c - 1] = cell;

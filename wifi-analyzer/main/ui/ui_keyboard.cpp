@@ -47,14 +47,14 @@ static void style_keyboard(lv_obj_t *kb)
     lv_obj_set_style_bg_color(kb, UI_COL_CARD_HI, LV_PART_ITEMS);
     lv_obj_set_style_text_color(kb, UI_COL_TEXT, LV_PART_ITEMS);
     lv_obj_set_style_text_font(kb, &lv_font_montserrat_14, LV_PART_ITEMS);
-    lv_obj_set_style_radius(kb, 6, LV_PART_ITEMS);
+    lv_obj_set_style_radius(kb, 3, LV_PART_ITEMS);
     lv_obj_set_style_border_width(kb, 0, LV_PART_ITEMS);
     lv_obj_set_style_shadow_width(kb, 0, LV_PART_ITEMS);
     /* modifier keys (shift, mode, backspace, OK...) */
     lv_obj_set_style_bg_color(kb, UI_COL_BORDER, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_text_color(kb, UI_COL_CYAN, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(kb, UI_COL_CYAN, LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(kb, lv_color_hex(0x071022), LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(kb, UI_COL_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(kb, UI_COL_ACCENT, LV_PART_ITEMS | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(kb, UI_COL_ON_FILL, LV_PART_ITEMS | LV_STATE_PRESSED);
 }
 
 void ui_text_input(const char *title, const char *placeholder, const char *initial, bool password,
@@ -65,7 +65,7 @@ void ui_text_input(const char *title, const char *placeholder, const char *initi
     S.user = user;
     S.back_to = back_to;
 
-    lv_obj_t *content = ui_screen_create(title, UI_COL_CYAN, true);
+    lv_obj_t *content = ui_screen_create(title, true);
     ui_set_back_target(back_to);
     lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *scr = lv_obj_get_screen(content);
@@ -80,16 +80,13 @@ void ui_text_input(const char *title, const char *placeholder, const char *initi
     lv_obj_set_size(S.ta, password ? 262 : LV_PCT(100), TA_H);
     lv_obj_align(S.ta, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_style_bg_color(S.ta, UI_COL_CARD, 0);
-    lv_obj_set_style_border_color(S.ta, UI_COL_CYAN, 0);
+    lv_obj_set_style_border_color(S.ta, UI_COL_ACCENT, 0);
     lv_obj_set_style_border_width(S.ta, 1, 0);
-    lv_obj_set_style_radius(S.ta, 8, 0);
+    lv_obj_set_style_radius(S.ta, UI_RADIUS, 0);
     lv_obj_set_style_text_color(S.ta, UI_COL_TEXT, 0);
     lv_obj_set_style_text_font(S.ta, &lv_font_montserrat_16, 0);
     lv_obj_set_style_pad_ver(S.ta, 7, 0);
-    lv_obj_set_style_shadow_color(S.ta, UI_COL_CYAN, 0);
-    lv_obj_set_style_shadow_width(S.ta, 12, 0);
-    lv_obj_set_style_shadow_opa(S.ta, LV_OPA_30, 0);
-    lv_obj_set_style_border_color(S.ta, UI_COL_CYAN, LV_PART_CURSOR | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_color(S.ta, UI_COL_ACCENT, LV_PART_CURSOR | LV_STATE_FOCUSED);
     lv_obj_add_state(S.ta, LV_STATE_FOCUSED); /* shows the blinking cursor */
 
     if (password) {
@@ -97,9 +94,9 @@ void ui_text_input(const char *title, const char *placeholder, const char *initi
         lv_obj_set_size(S.eye, 40, TA_H);
         lv_obj_align(S.eye, LV_ALIGN_TOP_RIGHT, 0, 0);
         lv_obj_set_style_bg_color(S.eye, UI_COL_CARD_HI, 0);
-        lv_obj_set_style_radius(S.eye, 8, 0);
+        lv_obj_set_style_radius(S.eye, UI_RADIUS, 0);
         lv_obj_set_style_shadow_width(S.eye, 0, 0);
-        lv_obj_t *l = ui_label(S.eye, &lv_font_montserrat_16, UI_COL_CYAN, LV_SYMBOL_EYE_OPEN);
+        lv_obj_t *l = ui_label(S.eye, &lv_font_montserrat_16, UI_COL_ACCENT, LV_SYMBOL_EYE_OPEN);
         lv_obj_center(l);
         lv_obj_add_event_cb(S.eye, on_eye_clicked, LV_EVENT_CLICKED, nullptr);
     }
@@ -128,12 +125,12 @@ static void do_connect(const char *ssid, const char *pass)
 static void on_password(const char *text, void *)
 {
     if (!s_flow_hidden && text[0] == 0) {
-        ui_toast("Enter the network password", UI_COL_AMBER);
+        ui_toast("Enter the network password", UI_COL_ACCENT);
         return;
     }
     size_t len = strlen(text);
     if (len > 0 && len < 8 && len != 5 && len != 13) { /* 5/13 = WEP keys */
-        ui_toast("WPA passwords have at least 8 characters", UI_COL_AMBER);
+        ui_toast("WPA passwords have at least 8 characters", UI_COL_ACCENT);
         return;
     }
     do_connect(s_flow_ssid, text);
@@ -144,7 +141,7 @@ static void ask_password(ui_screen_id_t back_to)
     char known[65] = "";
     wifi_mgr_known_password(s_flow_ssid, known, sizeof(known));
     char title[48];
-    snprintf(title, sizeof(title), LV_SYMBOL_WIFI " %.24s", s_flow_ssid);
+    snprintf(title, sizeof(title), "%.28s", s_flow_ssid);
     ui_text_input(title, s_flow_hidden ? "Password (empty = open)" : "Password", known, true, on_password, nullptr,
                   back_to);
 }
@@ -152,7 +149,7 @@ static void ask_password(ui_screen_id_t back_to)
 static void on_hidden_ssid(const char *text, void *)
 {
     if (text[0] == 0) {
-        ui_toast("Enter the network name", UI_COL_AMBER);
+        ui_toast("Enter the network name", UI_COL_ACCENT);
         return;
     }
     strlcpy(s_flow_ssid, text, sizeof(s_flow_ssid));
@@ -163,7 +160,7 @@ void ui_connect_flow(const char *ssid, bool needs_password)
 {
     s_flow_hidden = ssid[0] == 0;
     if (s_flow_hidden) {
-        ui_text_input(LV_SYMBOL_EYE_CLOSE " Hidden network", "Network name (SSID)", "", false, on_hidden_ssid, nullptr,
+        ui_text_input("Hidden network", "Network name (SSID)", "", false, on_hidden_ssid, nullptr,
                       UI_SCR_NETWORK);
         return;
     }
