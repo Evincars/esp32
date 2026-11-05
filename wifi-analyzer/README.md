@@ -20,9 +20,11 @@ Built with ESP-IDF 6.1 and LVGL 9.2.
   - *802.11* mode: monitor mode on one channel (beacons, probes, deauth, data, WPA handshakes). Other stations'
     data is encrypted on WPA networks, so it decodes up to the 802.11 header.
   - Tap a frame for a Wireshark-style breakdown by OSI layer (L1 radio/link, L2 Ethernet/802.11/LLC, L3 IPv4/IPv6/ARP/ICMP,
-    L4 TCP/UDP, L6 TLS with SNI/ALPN, L7 DNS/mDNS/NBNS/LLMNR/DHCP/HTTP/SSDP/NTP/MQTT/QUIC/SSH), the decoded
-    cleartext payload for HTTP (headers plus a pretty-printed JSON/XML/text body) and a hex dump. TLS is only
-    labelled when a real TLS record is present, not merely because the port is 443.
+    L4 TCP/UDP, L6 TLS with SNI/ALPN, L7 DNS/mDNS/NBNS/LLMNR/DHCP/HTTP/SSDP/NTP/MQTT/QUIC/SSH) and a hex dump.
+    For cleartext HTTP it also shows a browser-devtools-style view: the start line, the request or response
+    headers as key/value rows, and the body with JSON pretty-printed (XML/text shown as-is). TLS is only
+    labelled when a real TLS record is present, not merely because the port is 443. Up to 1 KB per frame is
+    captured, so most headers and small bodies fit (a request and its response are separate frames).
 - **Repeater** - range extender: stays joined to the home Wi-Fi as a station and opens its own SoftAP,
   forwarding client traffic through a custom NAT (lwIP NAPT) so Wi-Fi reaches the next room. Editable SSID
   (default `repeater-esp32-s3`) and password (default `hesloheslo`, blank = open), per-side throughput counters

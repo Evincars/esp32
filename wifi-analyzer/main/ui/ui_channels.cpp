@@ -17,7 +17,7 @@
 #define RSSI_TOP (-30)
 
 #define INFO_H 20
-#define GRAPH_H 150
+#define GRAPH_H 166
 #define STRIP_H 22
 #define PLOT_PAD_L 24
 #define PLOT_PAD_B 14
@@ -281,7 +281,7 @@ static void on_graph_clicked(lv_event_t *e)
 
     /* pick the hill whose outline at this x is closest to the tap */
     int best = -1;
-    int32_t best_d = 30;
+    int32_t best_d = 44;
     for (int i = 0; i < S.ap_count; i++) {
         const wifi_ap_record_t *ap = &S.aps[i];
         float center = wifi_ap_center_channel(ap), hw = half_width(ap);
@@ -370,6 +370,24 @@ static void update_info(void)
 
 /* ---------------- detail table ---------------- */
 
+static void update_info(void);
+
+/* Tapping a table row selects that AP on the graph - much easier than hitting a
+   thin overlapping curve by touch. */
+static void on_list_row(lv_event_t *e)
+{
+    int oi = (int)(intptr_t)lv_event_get_user_data(e);
+    if (oi >= S.ap_count) return;
+    if (S.has_highlight && memcmp(S.highlight, S.aps[oi].bssid, 6) == 0) {
+        S.has_highlight = false;
+    } else {
+        memcpy(S.highlight, S.aps[oi].bssid, 6);
+        S.has_highlight = true;
+    }
+    update_info();
+    lv_obj_invalidate(S.graph);
+}
+
 /* A scrollable list of every AP below the graph, strongest first, so the screen
    shows all the detail the scan gathered (the graph only labels the loudest few). */
 static void rebuild_ap_list(void)
@@ -381,10 +399,15 @@ static void rebuild_ap_list(void)
 
     lv_obj_clean(S.list);
     for (int k = 0; k < S.ap_count; k++) {
-        const wifi_ap_record_t *ap = &S.aps[order[k]];
-        lv_obj_t *row = lv_obj_create(S.list);
+        int oi = order[k];
+        const wifi_ap_record_t *ap = &S.aps[oi];
+        lv_obj_t *row = lv_button_create(S.list);
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, LV_PCT(100), 22);
+        lv_obj_set_style_bg_color(row, UI_COL_CARD_HI, LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_STATE_PRESSED);
+        lv_obj_set_style_radius(row, UI_RADIUS, 0);
+        lv_obj_add_event_cb(row, on_list_row, LV_EVENT_CLICKED, (void *)(intptr_t)oi);
         lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t *dot = lv_obj_create(row);

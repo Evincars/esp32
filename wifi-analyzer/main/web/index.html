@@ -236,7 +236,22 @@ async function showPacket(seq) {
       const bytes = l.match(/../g), asc = bytes.map(b => { const c = parseInt(b, 16); return c >= 32 && c < 127 ? String.fromCharCode(c) : '.'; }).join('');
       return (i * 16).toString(16).padStart(4, '0') + '  ' + bytes.join(' ').padEnd(47) + '  ' + esc(asc);
     }).join('\n');
-    const payload = p.payload ? `<div class="layer"><h3><span class="osi">Payload</span><span>${esc(p.payload_kind)}</span></h3><pre style="color:var(--good);margin:0;white-space:pre-wrap;word-break:break-word">${esc(p.payload)}</pre></div>` : '';
+    let payload = '';
+    if (p.payload) {
+      /* DevTools-style: start line, request/response headers, then the formatted body */
+      const i = p.payload.indexOf('\n\n');
+      const head = i < 0 ? p.payload : p.payload.slice(0, i);
+      const body = i < 0 ? '' : p.payload.slice(i + 2);
+      const lines = head.split('\n');
+      const start = lines.shift() || '';
+      const hdrs = lines.filter(l => l.includes(':')).map(l => { const j = l.indexOf(':'); return [l.slice(0, j), l.slice(j + 1).trim()]; });
+      const hdrHtml = hdrs.map(([k, v]) => `<dt>${esc(k)}</dt><dd style="text-align:left">${esc(v)}</dd>`).join('');
+      payload = `<div class="layer"><h3><span class="osi">HTTP</span><span>${esc(p.payload_kind)}</span></h3>` +
+        `<div class="acc" style="font-family:ui-monospace,monospace;word-break:break-all;margin-bottom:6px">${esc(start)}</div>` +
+        (hdrHtml ? `<dl class="kv">${hdrHtml}</dl>` : '') +
+        (body ? `<div class="dim" style="font-size:11px;margin:8px 0 2px">BODY</div><pre style="color:var(--good);margin:0;white-space:pre-wrap;word-break:break-word">${esc(body)}</pre>` : '') +
+        `</div>`;
+    }
     $('#detail').innerHTML = `<div class="layers">${p.layers.map(l => `<div class="layer"><h3><span class="osi">L${l.osi} ${l.osi_name}</span><span>${esc(l.name)}</span></h3><dl class="kv">${l.fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}${payload}</div><pre>${dump}</pre>`;
   } catch (e) { $('#detail').innerHTML = '<div class="empty">That frame has already left the capture buffer.</div>'; }
 }

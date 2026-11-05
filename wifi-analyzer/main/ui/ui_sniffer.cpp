@@ -32,7 +32,7 @@ typedef struct {
     sniff_pkt_t detail;
     pkt_layer_t layers[PKT_MAX_LAYERS];
     char dump[3200];
-    char payload[2048];
+    char payload[3072];
 } scratch_t;
 
 static scratch_t *W;

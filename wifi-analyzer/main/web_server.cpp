@@ -39,7 +39,7 @@ typedef struct {
     ps_host_t ps_hosts[PS_MAX_TARGETS];
     sniff_pkt_t pkt;
     pkt_layer_t layers[PKT_MAX_LAYERS];
-    char payload[2048];
+    char payload[3072];
 } scratch_t;
 
 static scratch_t *W;

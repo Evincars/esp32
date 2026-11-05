@@ -1195,6 +1195,7 @@ int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **ki
     if (plen <= 0) return 0;
     const uint8_t *b = d + ps;
     if (!is_http_start(b, plen)) return 0;
+    bool is_resp = plen >= 5 && memcmp(b, "HTTP/", 5) == 0;
 
     /* split headers / body at the blank line */
     int sep = -1;
@@ -1208,7 +1209,7 @@ int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **ki
         put(out, out_len, k, (char)b[i]);
     }
 
-    const char *body_kind = "HTTP";
+    int body_type = 0; /* 0 none, 1 json, 2 xml, 3 text */
     if (sep >= 0) {
         int bo = sep + 4;
         while (bo < plen && (b[bo] == ' ' || b[bo] == '\r' || b[bo] == '\n' || b[bo] == '\t')) bo++;
@@ -1217,10 +1218,10 @@ int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **ki
             if (k + 2 < out_len) { out[k++] = '\n'; out[k++] = '\n'; }
             char first = (char)b[bo];
             if (first == '{' || first == '[') {
-                body_kind = "JSON";
+                body_type = 1;
                 pretty_json(b + bo, blen, out, out_len, k);
             } else {
-                body_kind = first == '<' ? "XML" : "text";
+                body_type = first == '<' ? 2 : 3;
                 for (int i = 0; i < blen && k + 1 < out_len; i++) {
                     if (b[bo + i] == '\r') continue;
                     put(out, out_len, k, (char)b[bo + i]);
@@ -1229,7 +1230,13 @@ int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **ki
         }
     }
     out[k] = 0;
-    if (kind) *kind = body_kind;
+    if (kind) {
+        if (is_resp)
+            *kind = body_type == 1 ? "response - JSON" : body_type == 2 ? "response - XML"
+                    : body_type == 3 ? "response - text" : "response";
+        else
+            *kind = body_type ? "request - body" : "request";
+    }
     return (int)k;
 }
 

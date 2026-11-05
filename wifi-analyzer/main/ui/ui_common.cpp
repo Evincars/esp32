@@ -124,8 +124,9 @@ static void update_status(lv_timer_t *)
     case WIFI_ST_CONNECTED:
         if (wifi_mgr_conn_info(&info)) {
             /* name + a rough distance estimate from RSSI (log-distance path loss,
-               ~1 m reference at -40 dBm); scrolls if long, tinted by signal quality */
-            float d = powf(10.0f, (-40 - info.rssi) / 27.0f); /* n ~ 2.7 */
+               tuned for this board indoors so a typical connected signal reads a few
+               metres); scrolls if long, tinted by signal quality */
+            float d = powf(10.0f, (-50 - info.rssi) / 38.0f);
             char dist[12];
             if (d < 1.0f) snprintf(dist, sizeof(dist), "<1m");
             else if (d < 10.0f) snprintf(dist, sizeof(dist), "~%.1fm", d);
@@ -205,8 +206,13 @@ lv_obj_t *ui_screen_create(const char *title, bool with_back)
     lv_obj_set_style_border_width(hdr, 1, 0);
     lv_obj_set_style_border_side(hdr, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_remove_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
+    /* a single flex row: [back] title  <SSID+distance grows>  time  batt */
+    lv_obj_set_flex_flow(hdr, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(hdr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_left(hdr, with_back ? 0 : 10, 0);
+    lv_obj_set_style_pad_right(hdr, 8, 0);
+    lv_obj_set_style_pad_column(hdr, 8, 0);
 
-    int title_x = 10;
     if (with_back) {
         lv_obj_t *back = lv_button_create(hdr);
         lv_obj_remove_style_all(back);
@@ -216,29 +222,21 @@ lv_obj_t *ui_screen_create(const char *title, bool with_back)
         lv_obj_add_event_cb(back, on_back_clicked, LV_EVENT_CLICKED, nullptr);
         lv_obj_t *arrow = ui_label(back, &lv_font_montserrat_14, UI_COL_TEXT_DIM, LV_SYMBOL_LEFT);
         lv_obj_center(arrow);
-        title_x = 34;
     }
 
+    /* title shrinks (ellipsis) so it never crowds the network name out */
     lv_obj_t *t = ui_label(hdr, &lv_font_montserrat_14, UI_COL_TEXT, title);
-    lv_obj_align(t, LV_ALIGN_LEFT_MID, title_x, 0);
+    lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_max_width(t, 118, 0);
 
-    lv_obj_t *status = lv_obj_create(hdr);
-    lv_obj_remove_style_all(status);
-    lv_obj_remove_flag(status, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(status, LV_SIZE_CONTENT, LV_PCT(100));
-    lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(status, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(status, 8, 0);
-    /* small right inset so the last glyph is never clipped at the panel edge */
-    lv_obj_align(status, LV_ALIGN_RIGHT_MID, -6, 0);
-    s_hdr_time = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
-    s_hdr_net = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
-    /* fixed box + circular scroll: long SSIDs stay fully readable instead of being
-       clipped to a stray character at the panel edge */
-    lv_obj_set_width(s_hdr_net, 104);
-    lv_obj_set_style_text_align(s_hdr_net, LV_TEXT_ALIGN_RIGHT, 0);
+    /* the network name + distance takes all the leftover width and scrolls if needed */
+    s_hdr_net = ui_label(hdr, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
+    lv_obj_set_flex_grow(s_hdr_net, 1);
+    lv_obj_set_width(s_hdr_net, 1); /* grow from a 1px base so flex gives it the slack */
     lv_label_set_long_mode(s_hdr_net, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    s_hdr_batt = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
+
+    s_hdr_time = ui_label(hdr, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
+    s_hdr_batt = ui_label(hdr, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     s_hdr_screen = scr;
     update_status(nullptr);
 

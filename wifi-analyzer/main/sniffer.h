@@ -9,7 +9,7 @@
      other stations is encrypted on WPA networks, so it decodes up to the 802.11 header.
    Captured frames go into a ring buffer in PSRAM; a capture filter decides what is kept. */
 
-#define SNIFF_CAP 512 /* bytes kept per frame */
+#define SNIFF_CAP 1024 /* bytes kept per frame (enough for most HTTP headers + a small body) */
 #define SNIFF_RING 160
 
 typedef enum {
