@@ -102,7 +102,8 @@ lv_obj_t *ui_deauth_create(void)
     S.v_ch = ui_kv_row(card, "Channel");
 
     S.warn = ui_label(content, &lv_font_montserrat_10, UI_COL_TEXT_DIM,
-                      "Broadcasts deauth + disassoc frames to the AP's clients.");
+                      "Deauth + disassoc flood on the AP's channel. Note: routers/clients with 802.11w "
+                      "(PMF) - common on WPA3 and modern WPA2 - ignore these frames and cannot be knocked off.");
     lv_label_set_long_mode(S.warn, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(S.warn, LV_PCT(100));
     lv_obj_align(S.warn, LV_ALIGN_BOTTOM_LEFT, 0, -34);

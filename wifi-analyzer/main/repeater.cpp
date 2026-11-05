@@ -7,6 +7,8 @@
 #include "esp_netif_net_stack.h"
 #include "esp_wifi.h"
 #include "esp_wifi_ap_get_sta_list.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "lwip/netif.h"
 #include "rogue_ap.h"
 #include "wifi_mgr.h"
@@ -14,6 +16,7 @@
 static const char *TAG = "repeater";
 
 static bool s_running;
+static volatile bool s_ready; /* NAT + counters armed (AP netif came up) */
 static char s_ssid[33];
 static bool s_open;
 static esp_netif_t *s_ap;
@@ -104,6 +107,22 @@ static void offer_dns(void)
 
 /* ---------------- lifecycle ---------------- */
 
+/* Waits for the SoftAP netif to come up, then arms NAT, the DHCP-served DNS and the
+   byte counters. Runs off the LVGL/UI thread so the screen never blocks. */
+static void setup_task(void *)
+{
+    for (int i = 0; i < 80 && s_running && !esp_netif_is_netif_up(s_ap); i++) vTaskDelay(pdMS_TO_TICKS(25));
+    if (s_running) {
+        offer_dns();
+        esp_err_t nerr = esp_netif_napt_enable(s_ap);
+        if (nerr != ESP_OK) ESP_LOGE(TAG, "napt_enable: %s", esp_err_to_name(nerr));
+        esp_netif_tcpip_exec(hooks_install, nullptr);
+        s_ready = true;
+        ESP_LOGW(TAG, "repeater NAT armed");
+    }
+    vTaskDelete(nullptr);
+}
+
 bool repeater_start(const char *ssid, const char *pass)
 {
     if (s_running) return false;
@@ -138,19 +157,20 @@ bool repeater_start(const char *ssid, const char *pass)
     if (!s_open) strlcpy((char *)ap.ap.password, pass, sizeof(ap.ap.password));
     if (esp_wifi_set_config(WIFI_IF_AP, &ap) != ESP_OK) return false;
 
-    offer_dns();
+    /* keep the radio awake so forwarded packets are not delayed/dropped by modem sleep */
+    esp_wifi_set_ps(WIFI_PS_NONE);
 
-    /* custom NAT: rewrite client traffic onto the station's single IP */
-    esp_err_t nerr = esp_netif_napt_enable(s_ap);
-    if (nerr != ESP_OK) {
-        ESP_LOGE(TAG, "napt_enable: %s", esp_err_to_name(nerr));
+    /* NAT, DNS and the byte counters must wait until the SoftAP netif is actually up,
+       otherwise esp_netif_napt_enable() silently does nothing and no traffic forwards */
+    s_running = true;
+    s_ready = false;
+    if (xTaskCreate(setup_task, "rep_setup", 3072, nullptr, 4, nullptr) != pdPASS) {
+        s_running = false;
+        esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
         esp_wifi_set_mode(WIFI_MODE_STA);
         return false;
     }
-
-    esp_netif_tcpip_exec(hooks_install, nullptr);
-    s_running = true;
-    ESP_LOGW(TAG, "repeater '%s' up on ch %d (%s)", s_ssid, channel, s_open ? "open" : "WPA2");
+    ESP_LOGW(TAG, "repeater '%s' starting on ch %d (%s)", s_ssid, channel, s_open ? "open" : "WPA2");
     return true;
 }
 
@@ -158,8 +178,10 @@ void repeater_stop(void)
 {
     if (!s_running) return;
     s_running = false;
+    s_ready = false;
     esp_netif_tcpip_exec(hooks_remove, nullptr);
     esp_netif_napt_disable(s_ap);
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
     esp_wifi_set_mode(WIFI_MODE_STA); /* keeps the station link up */
     ESP_LOGI(TAG, "repeater stopped");
 }
@@ -170,6 +192,7 @@ void repeater_status(repeater_status_t *out)
 {
     memset(out, 0, sizeof(*out));
     out->running = s_running;
+    out->nat_ready = s_ready;
     strlcpy(out->ssid, s_ssid, sizeof(out->ssid));
     out->open = s_open;
     out->wan_rx = s_wan_rx;

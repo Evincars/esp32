@@ -32,6 +32,7 @@ typedef struct {
     sniff_pkt_t detail;
     pkt_layer_t layers[PKT_MAX_LAYERS];
     char dump[3200];
+    char payload[2048];
 } scratch_t;
 
 static scratch_t *W;
@@ -355,6 +356,22 @@ lv_obj_t *ui_packet_create(void)
             lv_obj_t *v = ui_kv_row(c, ly.f[f].k);
             lv_label_set_text(v, ly.f[f].v);
         }
+    }
+
+    /* decoded application payload (cleartext HTTP, pretty-printed JSON/XML/text) */
+    const char *kind = nullptr;
+    int pl = pkt_payload(&s_detail, W->payload, sizeof(W->payload), &kind);
+    if (pl > 0) {
+        lv_obj_t *pc = ui_card(content);
+        lv_obj_set_size(pc, LV_PCT(100), LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(pc, LV_FLEX_FLOW_COLUMN);
+        char cap[24];
+        snprintf(cap, sizeof(cap), "PAYLOAD (%s)", kind);
+        ui_caption(pc, cap);
+        lv_obj_t *pt = ui_label(pc, &lv_font_unscii_8, UI_COL_GOOD, W->payload);
+        lv_label_set_long_mode(pt, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(pt, LV_PCT(100));
+        lv_obj_set_style_text_line_space(pt, 2, 0);
     }
 
     /* hex dump in a monospace font: 8 bytes per line fits the 320 px screen */

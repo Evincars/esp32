@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 
@@ -54,6 +55,7 @@ static lv_obj_t *create_screen(ui_screen_id_t id)
     case UI_SCR_CSI: return ui_csi_create();
     case UI_SCR_LOCATE: return ui_locate_create();
     case UI_SCR_REPEATER: return ui_repeater_create();
+    case UI_SCR_IDENTITY: return ui_identity_create();
     case UI_SCR_WEB: return ui_web_create();
     case UI_SCR_SYSTEM: return ui_system_create();
     case UI_SCR_CLOCK: return ui_clock_create();
@@ -121,9 +123,14 @@ static void update_status(lv_timer_t *)
     switch (wifi_mgr_state()) {
     case WIFI_ST_CONNECTED:
         if (wifi_mgr_conn_info(&info)) {
-            /* show the network name (scrolls if long) so it is always readable,
-               tinted by signal quality */
-            lv_label_set_text(s_hdr_net, info.ssid[0] ? info.ssid : "connected");
+            /* name + a rough distance estimate from RSSI (log-distance path loss,
+               ~1 m reference at -40 dBm); scrolls if long, tinted by signal quality */
+            float d = powf(10.0f, (-40 - info.rssi) / 27.0f); /* n ~ 2.7 */
+            char dist[12];
+            if (d < 1.0f) snprintf(dist, sizeof(dist), "<1m");
+            else if (d < 10.0f) snprintf(dist, sizeof(dist), "~%.1fm", d);
+            else snprintf(dist, sizeof(dist), "~%dm", (int)(d + 0.5f));
+            lv_label_set_text_fmt(s_hdr_net, "%s  %s", info.ssid[0] ? info.ssid : "connected", dist);
             lv_obj_set_style_text_color(s_hdr_net, ui_rssi_color(info.rssi), 0);
         }
         lv_obj_set_style_text_opa(s_hdr_net, LV_OPA_COVER, 0);
@@ -509,9 +516,13 @@ void ui_fmt_mac(char *buf, size_t len, const uint8_t mac[6])
 
 /* The physical BOOT and USER (power) buttons. BOOT cycles the main views on
    top-level screens and backs out of sub-screens; USER hibernates the display. */
+#define BOOT_LONG_TICKS 30 /* 30 * 50 ms = 1.5 s hold to power off */
+
 static void boot_button_poll(lv_timer_t *)
 {
     static bool boot_was_down, user_was_down;
+    static int boot_ticks;
+    static bool boot_long_fired, boot_woke;
 
     bool user_down = board_user_button_pressed();
     if (user_down && !user_was_down) {
@@ -522,17 +533,23 @@ static void boot_button_poll(lv_timer_t *)
 
     bool boot_down = board_boot_button_pressed();
     if (boot_down && !boot_was_down) {
-        if (board_display_asleep()) {
-            board_display_wake(g_settings.brightness);
-        } else if (s_current == UI_SCR_MENU) {
-            ui_go(UI_SCR_CLOCK);
-        } else if (s_current == UI_SCR_CLOCK) {
-            ui_go(UI_SCR_SYSTEM);
-        } else if (s_current == UI_SCR_SYSTEM) {
-            ui_go(UI_SCR_MENU);
-        } else if (s_current != UI_SCR_CALIBRATE) {
-            ui_back();
+        /* press: start timing the hold; a press that wakes the display does nothing else */
+        boot_ticks = 0;
+        boot_long_fired = false;
+        boot_woke = board_display_asleep();
+        if (boot_woke) board_display_wake(g_settings.brightness);
+    } else if (boot_down) {
+        /* long hold -> deep sleep (the RST button only resets, so BOOT powers off) */
+        if (!boot_long_fired && !boot_woke && ++boot_ticks >= BOOT_LONG_TICKS && !board_display_asleep()) {
+            boot_long_fired = true;
+            boot_mode_sleep();
         }
+    } else if (boot_was_down && !boot_long_fired && !boot_woke) {
+        /* short press on release: cycle the top-level views or back out of a sub-screen */
+        if (s_current == UI_SCR_MENU) ui_go(UI_SCR_CLOCK);
+        else if (s_current == UI_SCR_CLOCK) ui_go(UI_SCR_SYSTEM);
+        else if (s_current == UI_SCR_SYSTEM) ui_go(UI_SCR_MENU);
+        else if (s_current != UI_SCR_CALIBRATE) ui_back();
     }
     boot_was_down = boot_down;
 }

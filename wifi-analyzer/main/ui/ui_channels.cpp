@@ -11,8 +11,10 @@
 #define CH_MAX 13
 #define X_MIN (-1.0f) /* plot range in channel units, wide enough for 40 MHz at the band edges */
 #define X_MAX 15.0f
-#define RSSI_FLOOR (-100)
-#define RSSI_TOP (-20)
+/* real 2.4 GHz signals rarely exceed -30 dBm, so the old -20 top wasted the
+   upper third of the plot; tightened to the band that is actually used */
+#define RSSI_FLOOR (-95)
+#define RSSI_TOP (-30)
 
 #define INFO_H 20
 #define GRAPH_H 150
@@ -27,6 +29,7 @@
 static struct {
     lv_obj_t *graph;
     lv_obj_t *info;
+    lv_obj_t *list;
     lv_obj_t *strip_cells[CH_MAX];
     lv_obj_t *strip_counts[CH_MAX];
     wifi_ap_record_t aps[WIFI_MAX_APS];
@@ -105,7 +108,7 @@ static void draw_grid(lv_layer_t *layer, const plot_t &p)
     td.color = UI_COL_TEXT_DIM;
 
     char buf[8];
-    for (int r = -30; r >= -90; r -= 20) {
+    for (int r = -40; r >= -90; r -= 10) {
         int32_t y = px_y(p, r);
         ld.p1.x = p.x0;
         ld.p1.y = y;
@@ -365,6 +368,49 @@ static void update_info(void)
     lv_obj_set_style_text_color(S.info, UI_COL_TEXT_DIM, 0);
 }
 
+/* ---------------- detail table ---------------- */
+
+/* A scrollable list of every AP below the graph, strongest first, so the screen
+   shows all the detail the scan gathered (the graph only labels the loudest few). */
+static void rebuild_ap_list(void)
+{
+    if (!S.list) return;
+    int order[WIFI_MAX_APS];
+    for (int i = 0; i < S.ap_count; i++) order[i] = i;
+    std::sort(order, order + S.ap_count, [](int a, int b) { return S.aps[a].rssi > S.aps[b].rssi; });
+
+    lv_obj_clean(S.list);
+    for (int k = 0; k < S.ap_count; k++) {
+        const wifi_ap_record_t *ap = &S.aps[order[k]];
+        lv_obj_t *row = lv_obj_create(S.list);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_size(row, LV_PCT(100), 22);
+        lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *dot = lv_obj_create(row);
+        lv_obj_remove_style_all(dot);
+        lv_obj_set_size(dot, 8, 8);
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(dot, ap_color(ap), 0);
+        lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+        lv_obj_align(dot, LV_ALIGN_LEFT_MID, 0, 0);
+
+        lv_obj_t *name = ui_label(row, &lv_font_montserrat_12, ap->ssid[0] ? UI_COL_TEXT : UI_COL_TEXT_DIM,
+                                  ap->ssid[0] ? (const char *)ap->ssid : "(hidden)");
+        lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(name, 150);
+        lv_obj_align(name, LV_ALIGN_LEFT_MID, 14, 0);
+
+        lv_obj_t *meta = ui_label(row, &lv_font_montserrat_10, UI_COL_TEXT_DIM, "");
+        lv_label_set_text_fmt(meta, "ch%d %dMHz", ap->primary, wifi_ap_bandwidth_mhz(ap));
+        lv_obj_align(meta, LV_ALIGN_RIGHT_MID, -46, 0);
+
+        lv_obj_t *rssi = ui_label(row, &lv_font_montserrat_12, ui_rssi_color(ap->rssi), "");
+        lv_label_set_text_fmt(rssi, "%d", ap->rssi);
+        lv_obj_align(rssi, LV_ALIGN_RIGHT_MID, 0, 0);
+    }
+}
+
 /* ---------------- data / animation ---------------- */
 
 static void t_exec(void *, int32_t v)
@@ -404,6 +450,7 @@ static void load_new_scan(void)
     lv_anim_start(&a);
 
     update_info();
+    rebuild_ap_list();
 }
 
 static void poll(lv_timer_t *)
@@ -431,7 +478,7 @@ lv_obj_t *ui_channels_create(void)
     memset(&S, 0, sizeof(S));
 
     lv_obj_t *content = ui_screen_create("Channel graph", true);
-    lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(content, LV_DIR_VER);
     lv_obj_add_event_cb(content, on_delete, LV_EVENT_DELETE, nullptr);
 
     S.info = ui_label(content, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
@@ -473,6 +520,19 @@ lv_obj_t *ui_channels_create(void)
         S.strip_counts[c - 1] = ui_label(cell, &lv_font_montserrat_10, UI_COL_TEXT, "");
         lv_obj_center(S.strip_counts[c - 1]);
     }
+
+    /* full network table below the graph; scrolls with the page */
+    int list_y = INFO_H + GRAPH_H + 4 + STRIP_H + 8;
+    lv_obj_t *cap = ui_caption(content, "NETWORKS");
+    lv_obj_align(cap, LV_ALIGN_TOP_LEFT, 2, list_y);
+    S.list = lv_obj_create(content);
+    lv_obj_remove_style_all(S.list);
+    lv_obj_set_width(S.list, LV_PCT(100));
+    lv_obj_set_height(S.list, LV_SIZE_CONTENT);
+    lv_obj_align(S.list, LV_ALIGN_TOP_LEFT, 0, list_y + 16);
+    lv_obj_set_flex_flow(S.list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(S.list, 3, 0);
+    lv_obj_remove_flag(S.list, LV_OBJ_FLAG_SCROLLABLE);
 
     S.seen_gen = wifi_mgr_scan_gen();
     load_new_scan();

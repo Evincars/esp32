@@ -7,7 +7,7 @@
 #include "ui.h"
 #include "wifi_mgr.h"
 
-#define ROW_H 34
+#define ROW_H 42
 #define TOOLBAR_H 28
 #define SHEET_H 204
 
@@ -231,7 +231,7 @@ static void build_row(int idx, const uint8_t *connected_bssid)
                               ap->ssid[0] ? (const char *)ap->ssid : "(hidden)");
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
     lv_obj_set_width(name, 196);
-    lv_obj_align(name, LV_ALIGN_TOP_LEFT, 30, 1);
+    lv_obj_align(name, LV_ALIGN_TOP_LEFT, 30, 4);
 
     char mac[20];
     ui_fmt_mac(mac, sizeof(mac), ap->bssid);
@@ -240,14 +240,14 @@ static void build_row(int idx, const uint8_t *connected_bssid)
                           wifi_auth_str(ap->authmode), mac);
     lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
     lv_obj_set_width(sub, 220);
-    lv_obj_align(sub, LV_ALIGN_BOTTOM_LEFT, 30, -3);
+    lv_obj_align(sub, LV_ALIGN_BOTTOM_LEFT, 30, -5);
 
     lv_obj_t *rssi = ui_label(row, &lv_font_montserrat_14, ui_rssi_color(ap->rssi), "");
     lv_label_set_text_fmt(rssi, "%d", ap->rssi);
-    lv_obj_align(rssi, LV_ALIGN_TOP_RIGHT, -8, 1);
+    lv_obj_align(rssi, LV_ALIGN_TOP_RIGHT, -8, 4);
     lv_obj_t *tag = ui_label(row, &lv_font_montserrat_10, is_connected ? UI_COL_GOOD : UI_COL_TEXT_DIM,
                              is_connected ? "joined" : ap->authmode == WIFI_AUTH_OPEN ? "open" : "dBm");
-    lv_obj_align(tag, LV_ALIGN_BOTTOM_RIGHT, -8, -3);
+    lv_obj_align(tag, LV_ALIGN_BOTTOM_RIGHT, -8, -5);
 }
 
 static void rebuild_list(void)

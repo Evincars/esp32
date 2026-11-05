@@ -558,7 +558,8 @@ void app_tcp(Dis &x, uint16_t sp, uint16_t dp, int off, int end)
     else if (port_in(sp, dp, {22})) ssh(x, off, end);
     else if (port_in(sp, dp, {1883})) mqtt(x, off, end);
     else if (port_in(sp, dp, {53})) dns(x, off + 2, end, "DNS", false);
-    else if (port_in(sp, dp, {443, 8443, 993, 995, 465, 8883})) tls(x, off, end, std::min(sp, dp));
+    /* No TLS record here: it is just a TCP segment on an encrypted port (ACK, key
+       exchange continuation...). Label it by the service, don't claim it is "TLS". */
     else raw_data(x, off, end);
 }
 
@@ -1105,6 +1106,131 @@ const char *pkt_osi_name(int osi)
 {
     static const char *N[] = {"", "Physical", "Data link", "Network", "Transport", "Session", "Presentation", "Application"};
     return osi >= 1 && osi <= 7 ? N[osi] : "";
+}
+
+/* ---------------- readable HTTP payload ---------------- */
+
+namespace {
+
+bool is_http_start(const uint8_t *d, int n)
+{
+    static const char *M[] = {"GET ", "POST ", "HEAD ", "PUT ", "DELETE ", "OPTIONS ", "PATCH ", "HTTP/1."};
+    for (const char *m : M) {
+        int l = (int)strlen(m);
+        if (n >= l && memcmp(d, m, l) == 0) return true;
+    }
+    return false;
+}
+
+/* Appends a byte as-is if printable or a tab/newline, else '.'; returns false when full. */
+bool put(char *out, size_t cap, size_t &k, char c)
+{
+    if (k + 1 >= cap) return false;
+    out[k++] = (c == '\t' || c == '\n' || isprint((unsigned char)c)) ? c : '.';
+    return true;
+}
+
+/* Pretty-prints a JSON body with 2-space indents; string contents are copied verbatim. */
+void pretty_json(const uint8_t *b, int len, char *out, size_t cap, size_t &k)
+{
+    int depth = 0;
+    bool in_str = false, esc = false;
+    auto nl = [&]() {
+        if (!put(out, cap, k, '\n')) return;
+        for (int i = 0; i < depth * 2 && k + 1 < cap; i++) out[k++] = ' ';
+    };
+    for (int i = 0; i < len; i++) {
+        char c = (char)b[i];
+        if (in_str) {
+            put(out, cap, k, c);
+            if (esc) esc = false;
+            else if (c == '\\') esc = true;
+            else if (c == '"') in_str = false;
+            continue;
+        }
+        switch (c) {
+        case '"': in_str = true; put(out, cap, k, c); break;
+        case '{': case '[': put(out, cap, k, c); depth++; nl(); break;
+        case '}': case ']': depth--; nl(); put(out, cap, k, c); break;
+        case ',': put(out, cap, k, c); nl(); break;
+        case ':': put(out, cap, k, c); put(out, cap, k, ' '); break;
+        case ' ': case '\t': case '\r': case '\n': break; /* drop original whitespace */
+        default: put(out, cap, k, c); break;
+        }
+        if (k + 1 >= cap) break;
+    }
+}
+
+} // namespace
+
+int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **kind)
+{
+    if (kind) *kind = "";
+    if (!out || out_len < 8) return 0;
+    out[0] = 0;
+    const uint8_t *d = p->data;
+    int n = p->caplen;
+    if (p->src == SNIFF_SRC_AIR || n < 14) return 0; /* need an Ethernet frame */
+
+    uint16_t et = d[12] << 8 | d[13];
+    int off = 14;
+    if (et == 0x8100 && n >= 18) { et = d[16] << 8 | d[17]; off = 18; }
+
+    int proto, l4;
+    if (et == 0x0800 && n >= off + 20) {
+        int ihl = (d[off] & 0x0F) * 4;
+        proto = d[off + 9];
+        l4 = off + ihl;
+    } else if (et == 0x86DD && n >= off + 40) {
+        proto = d[off + 6];
+        l4 = off + 40;
+    } else {
+        return 0;
+    }
+    if (proto != 6 || n < l4 + 20) return 0; /* TCP only */
+
+    int doff = (d[l4 + 12] >> 4) * 4;
+    int ps = l4 + doff;
+    int plen = n - ps;
+    if (plen <= 0) return 0;
+    const uint8_t *b = d + ps;
+    if (!is_http_start(b, plen)) return 0;
+
+    /* split headers / body at the blank line */
+    int sep = -1;
+    for (int i = 0; i + 3 < plen; i++) {
+        if (b[i] == '\r' && b[i + 1] == '\n' && b[i + 2] == '\r' && b[i + 3] == '\n') { sep = i; break; }
+    }
+    int hlen = sep < 0 ? plen : sep;
+    size_t k = 0;
+    for (int i = 0; i < hlen && k + 1 < out_len; i++) {
+        if (b[i] == '\r') continue;
+        put(out, out_len, k, (char)b[i]);
+    }
+
+    const char *body_kind = "HTTP";
+    if (sep >= 0) {
+        int bo = sep + 4;
+        while (bo < plen && (b[bo] == ' ' || b[bo] == '\r' || b[bo] == '\n' || b[bo] == '\t')) bo++;
+        int blen = plen - bo;
+        if (blen > 0) {
+            if (k + 2 < out_len) { out[k++] = '\n'; out[k++] = '\n'; }
+            char first = (char)b[bo];
+            if (first == '{' || first == '[') {
+                body_kind = "JSON";
+                pretty_json(b + bo, blen, out, out_len, k);
+            } else {
+                body_kind = first == '<' ? "XML" : "text";
+                for (int i = 0; i < blen && k + 1 < out_len; i++) {
+                    if (b[bo + i] == '\r') continue;
+                    put(out, out_len, k, (char)b[bo + i]);
+                }
+            }
+        }
+    }
+    out[k] = 0;
+    if (kind) *kind = body_kind;
+    return (int)k;
 }
 
 void pkt_hexdump(const uint8_t *d, int len, int per_line, char *out, size_t out_len)

@@ -41,6 +41,7 @@ idf_component_register(
         "ui/ui_csi.cpp"
         "ui/ui_locate.cpp"
         "ui/ui_repeater.cpp"
+        "ui/ui_identity.cpp"
     INCLUDE_DIRS "." "ui"
     EMBED_TXTFILES "web/index.html"
     PRIV_REQUIRES

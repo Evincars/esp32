@@ -17,6 +17,7 @@
 
 typedef struct {
     bool running;
+    bool nat_ready;        /* SoftAP up and NAT/forwarding armed */
     char ssid[33];
     bool open;             /* true = open network, false = WPA2 */
     uint8_t channel;       /* follows the station channel while upstream is up */

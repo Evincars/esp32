@@ -39,6 +39,7 @@ typedef struct {
     ps_host_t ps_hosts[PS_MAX_TARGETS];
     sniff_pkt_t pkt;
     pkt_layer_t layers[PKT_MAX_LAYERS];
+    char payload[2048];
 } scratch_t;
 
 static scratch_t *W;
@@ -445,7 +446,14 @@ static esp_err_t h_packet(httpd_req_t *req)
         }
         j.raw("]}");
     }
-    j.raw("],\"hex\":\"");
+    j.raw("],");
+    const char *kind = nullptr;
+    int pl = pkt_payload(&pkt, W->payload, sizeof(W->payload), &kind);
+    j.raw("\"payload_kind\":");
+    j.str(kind);
+    j.raw(",\"payload\":");
+    j.str(pl > 0 ? W->payload : "");
+    j.raw(",\"hex\":\"");
     for (int i = 0; i < pkt.caplen; i++) j.fmt("%02x", pkt.data[i]);
     j.raw("\"}");
     return j.finish();

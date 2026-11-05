@@ -20,13 +20,19 @@ Built with ESP-IDF 6.1 and LVGL 9.2.
   - *802.11* mode: monitor mode on one channel (beacons, probes, deauth, data, WPA handshakes). Other stations'
     data is encrypted on WPA networks, so it decodes up to the 802.11 header.
   - Tap a frame for a Wireshark-style breakdown by OSI layer (L1 radio/link, L2 Ethernet/802.11/LLC, L3 IPv4/IPv6/ARP/ICMP,
-    L4 TCP/UDP, L6 TLS with SNI/ALPN, L7 DNS/mDNS/NBNS/LLMNR/DHCP/HTTP/SSDP/NTP/MQTT/QUIC/SSH) and a hex dump.
+    L4 TCP/UDP, L6 TLS with SNI/ALPN, L7 DNS/mDNS/NBNS/LLMNR/DHCP/HTTP/SSDP/NTP/MQTT/QUIC/SSH), the decoded
+    cleartext payload for HTTP (headers plus a pretty-printed JSON/XML/text body) and a hex dump. TLS is only
+    labelled when a real TLS record is present, not merely because the port is 443.
 - **Repeater** - range extender: stays joined to the home Wi-Fi as a station and opens its own SoftAP,
   forwarding client traffic through a custom NAT (lwIP NAPT) so Wi-Fi reaches the next room. Editable SSID
   (default `repeater-esp32-s3`) and password (default `hesloheslo`, blank = open), per-side throughput counters
   (bytes to the home router vs. through the repeater), SoftAP gateway IP and a live list of connected clients
-  (IP, MAC, vendor, RSSI). Also randomizes all three radio MACs (Wi-Fi STA, Wi-Fi AP, BLE) to a fresh HP-OUI
-  identity, or restores the factory MACs; the choice is stored and re-applied at boot.
+  (IP, MAC, vendor, RSSI). Client traffic is NAT'd onto the station's single IP (custom lwIP NAPT); the radio's
+  power save is disabled while repeating so forwarded packets aren't delayed.
+- **MAC identity** - randomizes all three radio MACs (Wi-Fi station, Wi-Fi SoftAP, Bluetooth/BLE) to a fresh
+  HP-OUI identity so the board presents as an HP device, or restores the factory MACs. The choice is stored and
+  re-applied at every boot. (Applying a new identity briefly drops and reconnects the station link, so it is
+  blocked while the Repeater or Rogue AP is running.)
 - **Web server** - HTTP dashboard on port 80 (QR code on the device) for any phone/PC on the same network: system
   metrics with a history chart, Wi-Fi details, AP table, LAN hosts, port scan results and a live packet list with
   per-layer detail. Read-only, plus a "Rescan" button. Optionally started at boot.
@@ -65,7 +71,8 @@ Built with ESP-IDF 6.1 and LVGL 9.2.
 | Button | Action |
 | --- | --- |
 | **PWR / USER** (GPIO21) | hibernate: turns the display and backlight off while the firmware keeps running in the background (Wi-Fi, web server and any running tool stay up). Press again to wake. |
-| **BOOT** (GPIO0) | on the top-level views, cycles menu -> clock -> system monitor; on any other screen, goes back. Also wakes the board from hibernate/sleep. |
+| **BOOT** (GPIO0), short press | on the top-level views, cycles menu -> clock -> system monitor; on any other screen, goes back. Also wakes the board from hibernate/sleep. |
+| **BOOT** (GPIO0), hold ~1.5 s | deep sleep (power off). RST only resets the chip and cannot be long-press-detected in firmware, so holding BOOT is the "power off" gesture. |
 | **RST**, once | reboot into the next view: menu -> system monitor -> clock -> menu |
 | **RST**, twice within ~2 s | deep sleep (display and touch powered off); BOOT or RST wakes it |
 
@@ -109,8 +116,9 @@ If the picture is mirrored or the colors look inverted, change `LCD_MIRROR_X`, `
 | `main/sniffer.*` | LAN (lwIP netif hook) and 802.11 (monitor mode) capture into a PSRAM ring |
 | `main/wifi_attack.*` | raw-frame deauth flood and beacon spam engine |
 | `main/rogue_ap.*` | open softAP, captive DNS redirector and credential-capturing portal |
-| `main/repeater.*` | APSTA range extender: NAPT router, per-side byte counters, client list |
+| `main/repeater.*` | APSTA range extender: NAPT router (armed once the SoftAP is up), per-side byte counters, client list |
 | `main/netid.*` | MAC identity: randomize STA/AP/BT MACs to an HP OUI, persisted and re-applied at boot |
+| `main/ui/ui_identity.cpp` | MAC identity page (randomize / factory) |
 | `main/wifi_csi.*` | CSI capture + esp-dsp SIMD motion/presence detection |
 | `main/wifi_ftm.*` | 802.11mc Fine Timing Measurement distance sessions |
 | `main/pkt_decode.*` | protocol dissectors: summary line and per-OSI-layer fields |

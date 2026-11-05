@@ -3,6 +3,7 @@
 #include <ctime>
 
 #include "app_settings.h"
+#include "netid.h"
 #include "portscan.h"
 #include "repeater.h"
 #include "rogue_ap.h"
@@ -29,9 +30,9 @@ static const tile_def_t TILES[] = {
     {"Scanner", UI_SCR_SCANNER},    {"Channels", UI_SCR_CHANNELS}, {"Network", UI_SCR_NETWORK},
     {"Port scan", UI_SCR_PORTS},    {"Sniffer", UI_SCR_SNIFFER},   {"Deauth", UI_SCR_DEAUTH},
     {"Beacon spam", UI_SCR_BEACON}, {"Rogue AP", UI_SCR_ROGUE},    {"CSI Radar", UI_SCR_CSI},
-    {"Locate", UI_SCR_LOCATE},      {"Repeater", UI_SCR_REPEATER}, {"Web server", UI_SCR_WEB},
-    {"System", UI_SCR_SYSTEM},      {"Clock", UI_SCR_CLOCK},       {"Settings", UI_SCR_SETTINGS},
-    {"About", UI_SCR_ABOUT},
+    {"Locate", UI_SCR_LOCATE},      {"Repeater", UI_SCR_REPEATER}, {"MAC identity", UI_SCR_IDENTITY},
+    {"Web server", UI_SCR_WEB},     {"System", UI_SCR_SYSTEM},     {"Clock", UI_SCR_CLOCK},
+    {"Settings", UI_SCR_SETTINGS},  {"About", UI_SCR_ABOUT},
 };
 #define TILE_COUNT (int)(sizeof(TILES) / sizeof(TILES[0]))
 
@@ -136,6 +137,9 @@ static void update(lv_timer_t *)
             else set_value(i, dim, "off");
             break;
         }
+        case UI_SCR_IDENTITY:
+            set_value(i, netid_spoofed() ? UI_COL_ACCENT : dim, "%s", netid_spoofed() ? "HP spoof" : "factory");
+            break;
         case UI_SCR_WEB:
             if (web_server_running()) set_value(i, UI_COL_GOOD, "on :80");
             else set_value(i, dim, "off");

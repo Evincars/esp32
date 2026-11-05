@@ -236,7 +236,8 @@ async function showPacket(seq) {
       const bytes = l.match(/../g), asc = bytes.map(b => { const c = parseInt(b, 16); return c >= 32 && c < 127 ? String.fromCharCode(c) : '.'; }).join('');
       return (i * 16).toString(16).padStart(4, '0') + '  ' + bytes.join(' ').padEnd(47) + '  ' + esc(asc);
     }).join('\n');
-    $('#detail').innerHTML = `<div class="layers">${p.layers.map(l => `<div class="layer"><h3><span class="osi">L${l.osi} ${l.osi_name}</span><span>${esc(l.name)}</span></h3><dl class="kv">${l.fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}</div><pre>${dump}</pre>`;
+    const payload = p.payload ? `<div class="layer"><h3><span class="osi">Payload</span><span>${esc(p.payload_kind)}</span></h3><pre style="color:var(--good);margin:0;white-space:pre-wrap;word-break:break-word">${esc(p.payload)}</pre></div>` : '';
+    $('#detail').innerHTML = `<div class="layers">${p.layers.map(l => `<div class="layer"><h3><span class="osi">L${l.osi} ${l.osi_name}</span><span>${esc(l.name)}</span></h3><dl class="kv">${l.fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}${payload}</div><pre>${dump}</pre>`;
   } catch (e) { $('#detail').innerHTML = '<div class="empty">That frame has already left the capture buffer.</div>'; }
 }
 

@@ -2,9 +2,6 @@
 #include <cstring>
 
 #include "app_settings.h"
-#include "esp_mac.h"
-#include "esp_wifi.h"
-#include "netid.h"
 #include "oui.h"
 #include "repeater.h"
 #include "ui.h"
@@ -14,7 +11,6 @@ static struct {
     lv_obj_t *state, *btn, *btn_lbl;
     lv_obj_t *v_up, *v_gw, *v_clients, *v_ssid, *v_sec;
     lv_obj_t *v_wan, *v_lan;
-    lv_obj_t *v_mac_sta, *v_mac_ap, *v_mac_bt, *v_mac_label;
     lv_obj_t *list;
     int shown_clients;
 } S;
@@ -25,17 +21,6 @@ static void fmt_bytes(char *buf, size_t n, uint64_t b)
     else if (b < 1024 * 1024) snprintf(buf, n, "%.1f KB", b / 1024.0);
     else if (b < 1024ULL * 1024 * 1024) snprintf(buf, n, "%.2f MB", b / (1024.0 * 1024));
     else snprintf(buf, n, "%.2f GB", b / (1024.0 * 1024 * 1024));
-}
-
-static void show_mac(lv_obj_t *lbl, wifi_interface_t ifx, esp_mac_type_t bt_type, bool is_bt)
-{
-    uint8_t mac[6] = {};
-    if (is_bt) esp_read_mac(mac, bt_type);
-    else esp_wifi_get_mac(ifx, mac);
-    char m[20];
-    ui_fmt_mac(m, sizeof(m), mac);
-    const char *v = oui_vendor(mac);
-    lv_label_set_text_fmt(lbl, "%s  %s", m, v ? v : "");
 }
 
 static void rebuild_clients(void)
@@ -79,8 +64,8 @@ static void update(lv_timer_t *)
     repeater_status(&st);
     bool on = st.running;
 
-    lv_label_set_text(S.state, on ? "Running" : "Stopped");
-    lv_obj_set_style_text_color(S.state, on ? UI_COL_GOOD : UI_COL_TEXT_DIM, 0);
+    lv_label_set_text(S.state, !on ? "Stopped" : st.nat_ready ? "Running (NAT on)" : "Starting NAT...");
+    lv_obj_set_style_text_color(S.state, !on ? UI_COL_TEXT_DIM : st.nat_ready ? UI_COL_GOOD : UI_COL_ACCENT, 0);
     lv_label_set_text(S.btn_lbl, on ? "Stop repeater" : "Start repeater");
     lv_obj_set_style_bg_color(S.btn, on ? UI_COL_BAD : UI_COL_ACCENT, 0);
 
@@ -110,11 +95,6 @@ static void update(lv_timer_t *)
     fmt_bytes(rx, sizeof(rx), st.lan_rx);
     fmt_bytes(tx, sizeof(tx), st.lan_tx);
     lv_label_set_text_fmt(S.v_lan, LV_SYMBOL_DOWN " %s   " LV_SYMBOL_UP " %s", rx, tx);
-
-    show_mac(S.v_mac_sta, WIFI_IF_STA, ESP_MAC_WIFI_STA, false);
-    show_mac(S.v_mac_ap, WIFI_IF_AP, ESP_MAC_WIFI_SOFTAP, false);
-    show_mac(S.v_mac_bt, WIFI_IF_STA, ESP_MAC_BT, true);
-    lv_label_set_text(S.v_mac_label, netid_label());
 
     if (st.clients != S.shown_clients) rebuild_clients();
 }
@@ -162,28 +142,6 @@ static void on_edit_pass(lv_event_t *)
 {
     ui_text_input("Repeater password", "8+ chars, empty = open", g_settings.rep_pass, true, on_pass_done, nullptr,
                   UI_SCR_REPEATER);
-}
-
-static void on_randomize(lv_event_t *)
-{
-    if (repeater_running()) {
-        ui_toast("Stop the repeater first", UI_COL_BAD);
-        return;
-    }
-    ui_toast("Randomizing MACs...", UI_COL_ACCENT);
-    netid_randomize();
-    update(nullptr);
-}
-
-static void on_restore(lv_event_t *)
-{
-    if (repeater_running()) {
-        ui_toast("Stop the repeater first", UI_COL_BAD);
-        return;
-    }
-    netid_restore();
-    ui_toast("Factory MACs restored", UI_COL_GOOD);
-    update(nullptr);
 }
 
 static lv_obj_t *section_card(lv_obj_t *parent, const char *cap)
@@ -234,24 +192,6 @@ lv_obj_t *ui_repeater_create(void)
     lv_obj_t *thr = section_card(content, "THROUGHPUT");
     S.v_wan = ui_kv_row(thr, "To home Wi-Fi");
     S.v_lan = ui_kv_row(thr, "Through repeater");
-
-    lv_obj_t *mac = section_card(content, "MAC IDENTITY");
-    S.v_mac_sta = ui_kv_row(mac, "Station");
-    lv_obj_set_style_text_font(S.v_mac_sta, &lv_font_montserrat_10, 0);
-    S.v_mac_ap = ui_kv_row(mac, "SoftAP");
-    lv_obj_set_style_text_font(S.v_mac_ap, &lv_font_montserrat_10, 0);
-    S.v_mac_bt = ui_kv_row(mac, "Bluetooth");
-    lv_obj_set_style_text_font(S.v_mac_bt, &lv_font_montserrat_10, 0);
-    S.v_mac_label = ui_kv_row(mac, "Identity");
-
-    lv_obj_t *macbtns = lv_obj_create(content);
-    lv_obj_remove_style_all(macbtns);
-    lv_obj_set_size(macbtns, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(macbtns, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(macbtns, 6, 0);
-    small_btn(macbtns, "Randomize (HP)", UI_COL_ACCENT, on_randomize);
-    small_btn(macbtns, "Factory", UI_COL_CARD_HI, on_restore);
-    lv_obj_set_style_text_color(lv_obj_get_child(lv_obj_get_child(macbtns, 1), 0), UI_COL_TEXT, 0);
 
     ui_caption(content, "CLIENTS");
     S.list = ui_card(content);

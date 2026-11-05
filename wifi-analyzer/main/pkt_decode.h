@@ -55,3 +55,9 @@ int pkt_dissect(const sniff_pkt_t *p, pkt_layer_t *layers, int max);
 const char *pkt_osi_name(int osi);
 /* Writes "off  hex bytes  ascii" lines, `per_line` bytes each. */
 void pkt_hexdump(const uint8_t *d, int len, int per_line, char *out, size_t out_len);
+
+/* Extracts a readable application payload for cleartext HTTP frames (headers and,
+   if present, the body - JSON is pretty-printed). Returns bytes written (0 if the
+   frame has no readable payload, e.g. it is encrypted TLS or not HTTP). `kind`, if
+   given, is set to "HTTP", "JSON", "XML" or "text". */
+int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **kind);
