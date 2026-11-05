@@ -91,6 +91,9 @@ lv_obj_t *ui_rogue_create(void)
         snprintf(s_ssid, sizeof(s_ssid), "%s", st.ssid);
     }
     lv_obj_t *content = ui_screen_create("Rogue AP", true);
+    /* without an explicit layout every child would stack at (0,0) in the corner */
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(content, 6, 0);
 
     lv_obj_t *card = ui_card(content);
     lv_obj_set_size(card, LV_PCT(100), LV_SIZE_CONTENT);

@@ -25,7 +25,12 @@ typedef struct {
     int rssi;          /* live RSSI of the target */
     uint32_t sessions; /* completed measurement sessions */
     uint32_t fails;
+    uint8_t fail_reason; /* esp-wifi FTM_STATUS_* code of the last failure */
+    uint8_t num_frames;  /* valid measurement frames in the last report */
 } ftm_status_t;
+
+/* Human-readable reason for the last failed/empty FTM exchange. */
+const char *wifi_ftm_reason(uint8_t ftm_status);
 
 void wifi_ftm_init(void);
 bool wifi_ftm_start(const uint8_t bssid[6], const char *ssid, uint8_t channel);

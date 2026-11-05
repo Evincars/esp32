@@ -73,13 +73,18 @@ static void update(lv_timer_t *)
     switch (st.state) {
     case FTM_MEASURING: txt = "Measuring..."; col = UI_COL_ACCENT; break;
     case FTM_OK: txt = "Locked"; col = UI_COL_GOOD; break;
-    case FTM_FAIL: txt = "No FTM (AP unsupported?)"; col = UI_COL_BAD; break;
+    case FTM_FAIL:
+        /* once we have a fix, a dropped burst is just "retrying", not a hard error */
+        txt = st.sessions > 0 ? "Locked - retrying" : wifi_ftm_reason(st.fail_reason);
+        col = st.sessions > 0 ? UI_COL_ACCENT : UI_COL_BAD;
+        break;
     default: break;
     }
     lv_label_set_text(S.state, txt);
     lv_obj_set_style_text_color(S.state, col, 0);
 
-    if (st.state == FTM_OK) {
+    /* keep the last good reading on screen; a single dropped burst shouldn't blank it */
+    if (st.sessions > 0) {
         lv_label_set_text_fmt(S.dist, "%.2f m", st.dist_cm / 100.0f);
         lv_label_set_text_fmt(S.rtt, "%lu ns", (unsigned long)st.rtt_ns);
     } else {
@@ -170,7 +175,9 @@ lv_obj_t *ui_locate_create(void)
     S.dist = ui_label(content, &lv_font_montserrat_28, UI_COL_TEXT, "-- m");
     lv_obj_align(S.dist, LV_ALIGN_TOP_LEFT, rx, 36);
     S.state = ui_label(content, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "Idle");
-    lv_obj_align(S.state, LV_ALIGN_TOP_LEFT, rx, 70);
+    lv_label_set_long_mode(S.state, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(S.state, 320 - 12 - rx);
+    lv_obj_align(S.state, LV_ALIGN_TOP_LEFT, rx, 68);
     S.rtt = ui_label(content, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "--");
     lv_obj_align(S.rtt, LV_ALIGN_TOP_LEFT, rx, 88);
     S.rssi = ui_label(content, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "-- dBm");

@@ -10,6 +10,8 @@ typedef struct {
     uint8_t timezone;        /* index into the time_sync zone table */
     bool web_autostart;      /* start the HTTP dashboard at boot */
     bool rst_shortcuts;      /* RST cycles the boot view, a double press puts the board to sleep */
+    char rep_ssid[33];       /* repeater SoftAP name */
+    char rep_pass[65];       /* repeater SoftAP password ("" = open) */
 } app_settings_t;
 
 /* Global, loaded once at boot. Call app_settings_save() after changing it. */

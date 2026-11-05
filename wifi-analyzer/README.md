@@ -21,6 +21,12 @@ Built with ESP-IDF 6.1 and LVGL 9.2.
     data is encrypted on WPA networks, so it decodes up to the 802.11 header.
   - Tap a frame for a Wireshark-style breakdown by OSI layer (L1 radio/link, L2 Ethernet/802.11/LLC, L3 IPv4/IPv6/ARP/ICMP,
     L4 TCP/UDP, L6 TLS with SNI/ALPN, L7 DNS/mDNS/NBNS/LLMNR/DHCP/HTTP/SSDP/NTP/MQTT/QUIC/SSH) and a hex dump.
+- **Repeater** - range extender: stays joined to the home Wi-Fi as a station and opens its own SoftAP,
+  forwarding client traffic through a custom NAT (lwIP NAPT) so Wi-Fi reaches the next room. Editable SSID
+  (default `repeater-esp32-s3`) and password (default `hesloheslo`, blank = open), per-side throughput counters
+  (bytes to the home router vs. through the repeater), SoftAP gateway IP and a live list of connected clients
+  (IP, MAC, vendor, RSSI). Also randomizes all three radio MACs (Wi-Fi STA, Wi-Fi AP, BLE) to a fresh HP-OUI
+  identity, or restores the factory MACs; the choice is stored and re-applied at boot.
 - **Web server** - HTTP dashboard on port 80 (QR code on the device) for any phone/PC on the same network: system
   metrics with a history chart, Wi-Fi details, AP table, LAN hosts, port scan results and a live packet list with
   per-layer detail. Read-only, plus a "Rescan" button. Optionally started at boot.
@@ -103,6 +109,8 @@ If the picture is mirrored or the colors look inverted, change `LCD_MIRROR_X`, `
 | `main/sniffer.*` | LAN (lwIP netif hook) and 802.11 (monitor mode) capture into a PSRAM ring |
 | `main/wifi_attack.*` | raw-frame deauth flood and beacon spam engine |
 | `main/rogue_ap.*` | open softAP, captive DNS redirector and credential-capturing portal |
+| `main/repeater.*` | APSTA range extender: NAPT router, per-side byte counters, client list |
+| `main/netid.*` | MAC identity: randomize STA/AP/BT MACs to an HP OUI, persisted and re-applied at boot |
 | `main/wifi_csi.*` | CSI capture + esp-dsp SIMD motion/presence detection |
 | `main/wifi_ftm.*` | 802.11mc Fine Timing Measurement distance sessions |
 | `main/pkt_decode.*` | protocol dissectors: summary line and per-OSI-layer fields |

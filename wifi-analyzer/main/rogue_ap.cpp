@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/sockets.h"
+#include "repeater.h"
 #include "web_server.h"
 #include "wifi_mgr.h"
 
@@ -191,6 +192,7 @@ static httpd_handle_t start_portal(void)
 bool rogue_ap_start(const char *ssid)
 {
     if (s_running) return false;
+    if (repeater_running()) repeater_stop();
     if (web_server_running()) web_server_stop();
     wifi_mgr_disconnect();
 
@@ -199,7 +201,7 @@ bool rogue_ap_start(const char *ssid)
     s_http_hits = 0;
     s_cred_count = 0;
 
-    if (!s_ap_netif) s_ap_netif = esp_netif_create_default_wifi_ap();
+    s_ap_netif = wifi_mgr_ap_netif();
 
     if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK) return false;
     wifi_config_t ap = {};

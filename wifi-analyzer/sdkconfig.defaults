@@ -61,3 +61,11 @@ CONFIG_LV_USE_SWITCH=y
 CONFIG_LV_USE_DROPDOWN=y
 CONFIG_LV_USE_BAR=y
 CONFIG_LV_USE_ARC=y
+
+# Wi-Fi repeater: route client traffic from the SoftAP out through the station
+# link with Network Address/Port Translation (custom NAT).
+CONFIG_LWIP_IP_FORWARD=y
+CONFIG_LWIP_IPV4_NAPT=y
+CONFIG_LWIP_IPV4_NAPT_PORTMAP=y
+# More SoftAP clients for the repeater, and DHCP-served DNS for them.
+CONFIG_LWIP_DHCPS=y

@@ -46,6 +46,12 @@ typedef struct {
 
 void wifi_mgr_init(void);
 esp_netif_t *wifi_mgr_netif(void);
+/* The single SoftAP netif, created on first use (shared by the repeater and rogue AP). */
+esp_netif_t *wifi_mgr_ap_netif(void);
+
+/* Re-applies station/SoftAP MAC addresses: briefly stops the radio, sets the
+   MACs and reconnects the station to the last network. Used by MAC spoofing. */
+bool wifi_mgr_apply_mac(const uint8_t sta[6], const uint8_t ap[6]);
 
 /* Access point scanning */
 bool wifi_mgr_scan_start(void);

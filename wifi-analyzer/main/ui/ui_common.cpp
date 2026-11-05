@@ -53,6 +53,7 @@ static lv_obj_t *create_screen(ui_screen_id_t id)
     case UI_SCR_ROGUE: return ui_rogue_create();
     case UI_SCR_CSI: return ui_csi_create();
     case UI_SCR_LOCATE: return ui_locate_create();
+    case UI_SCR_REPEATER: return ui_repeater_create();
     case UI_SCR_WEB: return ui_web_create();
     case UI_SCR_SYSTEM: return ui_system_create();
     case UI_SCR_CLOCK: return ui_clock_create();
@@ -120,7 +121,9 @@ static void update_status(lv_timer_t *)
     switch (wifi_mgr_state()) {
     case WIFI_ST_CONNECTED:
         if (wifi_mgr_conn_info(&info)) {
-            lv_label_set_text_fmt(s_hdr_net, "%d dBm", info.rssi);
+            /* show the network name (scrolls if long) so it is always readable,
+               tinted by signal quality */
+            lv_label_set_text(s_hdr_net, info.ssid[0] ? info.ssid : "connected");
             lv_obj_set_style_text_color(s_hdr_net, ui_rssi_color(info.rssi), 0);
         }
         lv_obj_set_style_text_opa(s_hdr_net, LV_OPA_COVER, 0);
@@ -223,6 +226,11 @@ lv_obj_t *ui_screen_create(const char *title, bool with_back)
     lv_obj_align(status, LV_ALIGN_RIGHT_MID, -6, 0);
     s_hdr_time = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     s_hdr_net = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
+    /* fixed box + circular scroll: long SSIDs stay fully readable instead of being
+       clipped to a stray character at the panel edge */
+    lv_obj_set_width(s_hdr_net, 104);
+    lv_obj_set_style_text_align(s_hdr_net, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(s_hdr_net, LV_LABEL_LONG_SCROLL_CIRCULAR);
     s_hdr_batt = ui_label(status, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     s_hdr_screen = scr;
     update_status(nullptr);

@@ -17,6 +17,7 @@
 #include "oui.h"
 #include "pkt_decode.h"
 #include "portscan.h"
+#include "repeater.h"
 #include "sdkconfig.h"
 #include "sniffer.h"
 #include "sysmon.h"
@@ -253,6 +254,30 @@ static esp_err_t h_status(httpd_req_t *req)
     strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
     j.fmt("\"time\":{\"valid\":%s,\"local\":\"%s\",\"zone\":\"%s\"},", time_sync_valid() ? "true" : "false", buf,
           time_sync_zone_name(g_settings.timezone));
+    repeater_status_t rep;
+    repeater_status(&rep);
+    j.fmt("\"repeater\":{\"running\":%s,", rep.running ? "true" : "false");
+    j.kv_str("ssid", rep.ssid);
+    j.fmt(",\"open\":%s,\"upstream\":%s,", rep.open ? "true" : "false", rep.upstream_up ? "true" : "false");
+    j.kv_str("upstream_ssid", rep.upstream_ssid);
+    ip_str(buf, sizeof(buf), rep.ap_ip);
+    j.fmt(",\"gw\":\"%s\",\"clients\":%d,\"wan_rx\":%llu,\"wan_tx\":%llu,\"lan_rx\":%llu,\"lan_tx\":%llu,\"peers\":[",
+          buf, rep.clients, (unsigned long long)rep.wan_rx, (unsigned long long)rep.wan_tx,
+          (unsigned long long)rep.lan_rx, (unsigned long long)rep.lan_tx);
+    repeater_client_t peers[REP_MAX_CLIENTS];
+    int np = repeater_clients(peers, REP_MAX_CLIENTS);
+    for (int i = 0; i < np; i++) {
+        ip_str(buf, sizeof(buf), peers[i].ip);
+        j.fmt("%s{\"ip\":\"%s\"", i ? "," : "", buf);
+        mac_str(buf, sizeof(buf), peers[i].mac);
+        j.fmt(",\"mac\":\"%s\"", buf);
+        const char *v = oui_vendor(peers[i].mac);
+        j.raw(",");
+        j.kv_str("vendor", v ? v : "");
+        j.fmt(",\"rssi\":%d}", peers[i].rssi);
+    }
+    j.raw("]},");
+
     j.fmt("\"web\":{\"requests\":%lu}}", (unsigned long)s_requests);
     return j.finish();
 }

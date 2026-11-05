@@ -4,6 +4,7 @@
 
 #include "app_settings.h"
 #include "portscan.h"
+#include "repeater.h"
 #include "rogue_ap.h"
 #include "sniffer.h"
 #include "sysmon.h"
@@ -28,8 +29,9 @@ static const tile_def_t TILES[] = {
     {"Scanner", UI_SCR_SCANNER},    {"Channels", UI_SCR_CHANNELS}, {"Network", UI_SCR_NETWORK},
     {"Port scan", UI_SCR_PORTS},    {"Sniffer", UI_SCR_SNIFFER},   {"Deauth", UI_SCR_DEAUTH},
     {"Beacon spam", UI_SCR_BEACON}, {"Rogue AP", UI_SCR_ROGUE},    {"CSI Radar", UI_SCR_CSI},
-    {"Locate", UI_SCR_LOCATE},      {"Web server", UI_SCR_WEB},    {"System", UI_SCR_SYSTEM},
-    {"Clock", UI_SCR_CLOCK},        {"Settings", UI_SCR_SETTINGS}, {"About", UI_SCR_ABOUT},
+    {"Locate", UI_SCR_LOCATE},      {"Repeater", UI_SCR_REPEATER}, {"Web server", UI_SCR_WEB},
+    {"System", UI_SCR_SYSTEM},      {"Clock", UI_SCR_CLOCK},       {"Settings", UI_SCR_SETTINGS},
+    {"About", UI_SCR_ABOUT},
 };
 #define TILE_COUNT (int)(sizeof(TILES) / sizeof(TILES[0]))
 
@@ -125,6 +127,13 @@ static void update(lv_timer_t *)
             if (st.running && st.state == FTM_OK) set_value(i, UI_COL_GOOD, "%.1f m", st.dist_cm / 100.0f);
             else if (st.running) set_value(i, UI_COL_ACCENT, "measuring");
             else set_value(i, dim, "idle");
+            break;
+        }
+        case UI_SCR_REPEATER: {
+            repeater_status_t st;
+            repeater_status(&st);
+            if (st.running) set_value(i, UI_COL_GOOD, "%d cli", st.clients);
+            else set_value(i, dim, "off");
             break;
         }
         case UI_SCR_WEB:

@@ -13,6 +13,8 @@ app_settings_t g_settings = {
     .timezone = 2, /* Central Europe */
     .web_autostart = false,
     .rst_shortcuts = true,
+    .rep_ssid = "repeater-esp32-s3",
+    .rep_pass = "hesloheslo",
 };
 
 void app_settings_load(void)

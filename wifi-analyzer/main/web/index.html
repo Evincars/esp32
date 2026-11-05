@@ -32,7 +32,11 @@ canvas{width:100%;height:70px;display:block}
 table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
 th{text-align:left;color:var(--dim);font-weight:500;border-bottom:1px solid var(--border);padding:4px 8px 4px 0;white-space:nowrap}
 td{border-bottom:1px solid var(--border);padding:4px 8px 4px 0;white-space:nowrap}
-td.wrap{white-space:normal;overflow-wrap:anywhere}
+/* long free-text cells (packet Info, port banners) stay on one line and ellipsize
+   so rows keep a compact height on mobile; the table itself scrolls horizontally,
+   and the full text is in the cell's title (and in the packet detail on tap) */
+td.wrap{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38ch}
+@media (max-width:560px){td.wrap{max-width:20ch}}
 tr.sel td{background:color-mix(in srgb,var(--accent) 14%,transparent)}
 tbody tr{cursor:default}
 #pk tbody tr{cursor:pointer}
@@ -72,6 +76,12 @@ pre{margin:10px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,mon
   <section>
     <h2>Wi-Fi <span class="aside" id="wstate"></span></h2>
     <dl class="kv" id="wifi"></dl>
+  </section>
+
+  <section id="repsec" style="display:none">
+    <h2>Repeater <span class="aside" id="repstate"></span></h2>
+    <dl class="kv" id="rep"></dl>
+    <div class="table" style="margin-top:8px"><table id="peers"><thead><tr><th>Client IP</th><th>MAC</th><th>Vendor</th><th>RSSI</th></tr></thead><tbody></tbody></table></div>
   </section>
 
   <section class="wide">
@@ -156,6 +166,23 @@ async function status() {
     ['MAC', w.mac], ['Hostname', esc(w.hostname)], ['Dashboard requests', s.web.requests]] :
     [['MAC', w.mac], ['Hostname', esc(w.hostname)]];
   $('#wifi').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+
+  const r = s.repeater;
+  if (r && r.running) {
+    $('#repsec').style.display = '';
+    $('#repstate').innerHTML = `<span class="good">on · ${r.clients} client${r.clients === 1 ? '' : 's'}</span>`;
+    const rr = [
+      ['SSID', `${esc(r.ssid)} <span class="tag">${r.open ? 'open' : 'WPA2'}</span>`],
+      ['Upstream', r.upstream ? `<span class="good">${esc(r.upstream_ssid)}</span>` : '<span class="bad">down</span>'],
+      ['Gateway', r.gw],
+      ['To home Wi-Fi', `↓ ${mb(r.wan_rx)} · ↑ ${mb(r.wan_tx)}`],
+      ['Through repeater', `↓ ${mb(r.lan_rx)} · ↑ ${mb(r.lan_tx)}`]];
+    $('#rep').innerHTML = rr.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+    $('#peers tbody').innerHTML = (r.peers || []).map(x => `<tr><td>${x.ip}</td><td>${x.mac}</td><td class="dim">${esc(x.vendor)}</td><td class="${rssiClass(x.rssi)}">${x.rssi}</td></tr>`).join('') ||
+      '<tr><td colspan="4" class="empty">No clients connected</td></tr>';
+  } else {
+    $('#repsec').style.display = 'none';
+  }
 }
 
 async function aps() {
@@ -177,14 +204,14 @@ async function ports() {
   const p = await get('/api/ports');
   $('#psstate').textContent = p.running ? `scanning host ${p.hosts_done + 1}/${p.hosts_total} · ${p.ports_done}/${p.ports_total} ports` :
     p.hosts_total ? `${p.open.length} open on ${p.hosts_total} host(s) in ${(p.elapsed_ms / 1000).toFixed(1)} s` : '';
-  $('#ports tbody').innerHTML = p.open.map(o => `<tr><td>${o.ip}</td><td class="acc">${o.port}/tcp</td><td>${o.service}</td><td>${o.rtt} ms</td><td class="wrap dim">${esc(o.banner)}</td></tr>`).join('') ||
+  $('#ports tbody').innerHTML = p.open.map(o => `<tr><td>${o.ip}</td><td class="acc">${o.port}/tcp</td><td>${o.service}</td><td>${o.rtt} ms</td><td class="wrap dim" title="${esc(o.banner)}">${esc(o.banner)}</td></tr>`).join('') ||
     '<tr><td colspan="5" class="empty">No open ports found yet (start a scan on the device)</td></tr>';
 }
 
 function renderPackets() {
   const f = $('#pkfilter').value.trim().toLowerCase();
   const rows = f ? pkRows.filter(p => (p.proto + ' ' + p.src + ' ' + p.dst + ' ' + p.info).toLowerCase().includes(f)) : pkRows;
-  $('#pk tbody').innerHTML = rows.slice(-300).reverse().map(p => `<tr data-seq="${p.seq}" class="${p.seq === selSeq ? 'sel' : ''}"><td class="dim">${p.seq}</td><td class="dim">${(p.t / 1000).toFixed(3)}</td><td>${esc(p.src)}</td><td>${esc(p.dst)}</td><td class="${p.osi >= 5 ? 'acc' : p.osi === 4 ? 'good' : ''}">${esc(p.proto)}</td><td>${p.len}</td><td class="wrap">${esc(p.info)}</td></tr>`).join('') ||
+  $('#pk tbody').innerHTML = rows.slice(-300).reverse().map(p => `<tr data-seq="${p.seq}" class="${p.seq === selSeq ? 'sel' : ''}"><td class="dim">${p.seq}</td><td class="dim">${(p.t / 1000).toFixed(3)}</td><td>${esc(p.src)}</td><td>${esc(p.dst)}</td><td class="${p.osi >= 5 ? 'acc' : p.osi === 4 ? 'good' : ''}">${esc(p.proto)}</td><td>${p.len}</td><td class="wrap" title="${esc(p.info)}">${esc(p.info)}</td></tr>`).join('') ||
     '<tr><td colspan="7" class="empty">Start a capture on the device (Sniffer)</td></tr>';
 }
 

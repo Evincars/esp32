@@ -33,6 +33,7 @@ typedef struct {
 
 static SemaphoreHandle_t s_mutex;
 static esp_netif_t *s_netif;
+static esp_netif_t *s_ap_netif;
 
 static wifi_ap_record_t s_aps[WIFI_MAX_APS];
 static int s_ap_count;
@@ -252,6 +253,45 @@ void wifi_mgr_init(void)
 esp_netif_t *wifi_mgr_netif(void)
 {
     return s_netif;
+}
+
+esp_netif_t *wifi_mgr_ap_netif(void)
+{
+    if (!s_ap_netif) s_ap_netif = esp_netif_create_default_wifi_ap();
+    return s_ap_netif;
+}
+
+bool wifi_mgr_apply_mac(const uint8_t sta[6], const uint8_t ap[6])
+{
+    known_net_t target;
+    bool was_connected;
+    {
+        Lock l;
+        was_connected = s_state == WIFI_ST_CONNECTED || s_state == WIFI_ST_CONNECTING;
+        target = s_target;
+        /* park the state machine so the stop/start disconnect events are ignored */
+        s_has_pending = false;
+        set_status(WIFI_ST_IDLE, "Reapplying MAC");
+    }
+
+    wifi_mode_t mode = WIFI_MODE_STA;
+    esp_wifi_get_mode(&mode);
+    esp_wifi_disconnect();
+    esp_wifi_stop();
+    /* both interfaces must exist and be stopped to set their MACs */
+    esp_wifi_set_mode(WIFI_MODE_APSTA);
+    esp_err_t e1 = esp_wifi_set_mac(WIFI_IF_STA, sta);
+    esp_err_t e2 = esp_wifi_set_mac(WIFI_IF_AP, ap);
+    esp_wifi_set_mode(mode == WIFI_MODE_NULL ? WIFI_MODE_STA : mode);
+    esp_wifi_start();
+
+    if (e1 != ESP_OK || e2 != ESP_OK)
+        ESP_LOGW(TAG, "set_mac sta=%s ap=%s", esp_err_to_name(e1), esp_err_to_name(e2));
+    if (was_connected && target.ssid[0]) {
+        Lock l;
+        start_connect(&target);
+    }
+    return e1 == ESP_OK && e2 == ESP_OK;
 }
 
 bool wifi_mgr_scan_start(void)

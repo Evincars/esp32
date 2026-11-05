@@ -25,6 +25,7 @@ static void on_ftm_report(void *, esp_event_base_t, int32_t, void *data)
 {
     auto *r = (wifi_event_ftm_report_t *)data;
     taskENTER_CRITICAL(&s_lock);
+    s_st.num_frames = r->ftm_report_num_entries;
     if (r->status == FTM_STATUS_SUCCESS) {
         s_st.dist_cm = r->dist_est;
         s_st.rtt_ns = r->rtt_est;
@@ -32,6 +33,7 @@ static void on_ftm_report(void *, esp_event_base_t, int32_t, void *data)
         s_st.state = FTM_OK;
     } else {
         s_st.fails++;
+        s_st.fail_reason = r->status;
         s_st.state = FTM_FAIL;
     }
     taskEXIT_CRITICAL(&s_lock);
@@ -56,10 +58,21 @@ static void ftm_task(void *)
 
         xEventGroupClearBits(s_eg, FTM_DONE_BIT | FTM_FAIL_BIT);
         if (esp_wifi_ftm_initiate_session(&cfg) == ESP_OK) {
-            xEventGroupWaitBits(s_eg, FTM_DONE_BIT | FTM_FAIL_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(2000));
+            EventBits_t bits =
+                xEventGroupWaitBits(s_eg, FTM_DONE_BIT | FTM_FAIL_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(2000));
+            if (bits == 0) {
+                /* no report at all: the peer never answered the FTM request */
+                esp_wifi_ftm_end_session();
+                taskENTER_CRITICAL(&s_lock);
+                s_st.fails++;
+                s_st.fail_reason = FTM_STATUS_NO_RESPONSE;
+                s_st.state = FTM_FAIL;
+                taskEXIT_CRITICAL(&s_lock);
+            }
         } else {
             taskENTER_CRITICAL(&s_lock);
             s_st.fails++;
+            s_st.fail_reason = FTM_STATUS_CONF_REJECTED;
             s_st.state = FTM_FAIL;
             taskEXIT_CRITICAL(&s_lock);
         }
@@ -122,6 +135,18 @@ void wifi_ftm_status(ftm_status_t *out)
     *out = s_st;
     taskEXIT_CRITICAL(&s_lock);
     out->running = s_running;
+}
+
+const char *wifi_ftm_reason(uint8_t ftm_status)
+{
+    switch (ftm_status) {
+    case FTM_STATUS_UNSUPPORTED: return "AP has no FTM responder";
+    case FTM_STATUS_CONF_REJECTED: return "AP rejected FTM request";
+    case FTM_STATUS_NO_RESPONSE: return "No response from AP";
+    case FTM_STATUS_NO_VALID_MSMT: return "No valid measurement";
+    case FTM_STATUS_FAIL: return "FTM exchange failed";
+    default: return "FTM failed";
+    }
 }
 
 void wifi_ftm_init(void) {}

@@ -8,7 +8,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl_port.h"
+#include "netid.h"
 #include "nvs_flash.h"
+#include "repeater.h"
 #include "sniffer.h"
 #include "sysmon.h"
 #include "time_sync.h"
@@ -55,9 +57,13 @@ extern "C" void app_main(void)
     touch_init();
     bool calibrated = touch_calib_load();
 
+    /* applies any stored spoofed MAC identity before the Wi-Fi driver starts */
+    netid_init();
+
     lvgl_port_init();
     wifi_mgr_init();
     sniffer_init();
+    repeater_init();
 
     if (lvgl_port_lock(portMAX_DELAY)) {
         ui_init(!calibrated, start_screen(view));
