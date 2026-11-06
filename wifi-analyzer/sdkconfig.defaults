@@ -69,3 +69,13 @@ CONFIG_LWIP_IPV4_NAPT=y
 CONFIG_LWIP_IPV4_NAPT_PORTMAP=y
 # More SoftAP clients for the repeater, and DHCP-served DNS for them.
 CONFIG_LWIP_DHCPS=y
+
+# Bluetooth Low Energy (NimBLE host + BLE-only controller), coexisting with Wi-Fi.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=5120
+# Keep the NimBLE host's heap in PSRAM; internal DRAM is tight (LVGL DMA
+# buffers + Wi-Fi + BLE controller + coexistence), and the host otherwise
+# fails its first allocation (ble_gap_init -> ENOMEM) and panics in a loop.
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y

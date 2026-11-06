@@ -3,6 +3,7 @@ idf_component_register(
         "main.cpp"
         "app_settings.cpp"
         "board.cpp"
+        "bt_mgr.cpp"
         "boot_mode.cpp"
         "lvgl_port.cpp"
         "netid.cpp"
@@ -42,11 +43,13 @@ idf_component_register(
         "ui/ui_locate.cpp"
         "ui/ui_repeater.cpp"
         "ui/ui_identity.cpp"
+        "ui/ui_bluetooth.cpp"
     INCLUDE_DIRS "." "ui"
     EMBED_TXTFILES "web/index.html"
     PRIV_REQUIRES
         app_update
         bootloader_support
+        bt
         esp_adc
         esp_app_format
         esp_driver_gpio

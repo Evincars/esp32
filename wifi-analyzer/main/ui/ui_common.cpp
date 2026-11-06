@@ -56,6 +56,7 @@ static lv_obj_t *create_screen(ui_screen_id_t id)
     case UI_SCR_LOCATE: return ui_locate_create();
     case UI_SCR_REPEATER: return ui_repeater_create();
     case UI_SCR_IDENTITY: return ui_identity_create();
+    case UI_SCR_BLUETOOTH: return ui_bluetooth_create();
     case UI_SCR_WEB: return ui_web_create();
     case UI_SCR_SYSTEM: return ui_system_create();
     case UI_SCR_CLOCK: return ui_clock_create();

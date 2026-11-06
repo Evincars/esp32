@@ -35,6 +35,14 @@ Built with ESP-IDF 6.1 and LVGL 9.2.
   HP-OUI identity so the board presents as an HP device, or restores the factory MACs. The choice is stored and
   re-applied at every boot. (Applying a new identity briefly drops and reconnects the station link, so it is
   blocked while the Repeater or Rogue AP is running.)
+- **Bluetooth LE** - BLE (NimBLE) alongside Wi-Fi, in three tabs:
+  - *Scan* - nearby advertisers with name, MAC (+ public/random, flagged when the address is randomized/private),
+    RSSI, connectability, parsed vendor/company, appearance and 16-bit services, with a device-class guess
+    (Phone, Watch, Headphones, Beacon...). Tap a device for the full parse and raw advertising bytes.
+  - *Device* - advertises the board with a **Nordic UART Service** so a phone (e.g. nRF Connect, or any BLE UART
+    app) can connect and exchange text both ways; shows a console of what the phone sends and a Send button.
+  - *Broadcast* - a non-connectable advertising airtime/RF test (confirm-gated, benign payload, rotating random
+    addresses). Deliberately **not** crafted to trigger pairing/notification pop-ups on other devices.
 - **Web server** - HTTP dashboard on port 80 (QR code on the device) for any phone/PC on the same network: system
   metrics with a history chart, Wi-Fi details, AP table, LAN hosts, port scan results and a live packet list with
   per-layer detail. Read-only, plus a "Rescan" button. Optionally started at boot.
@@ -120,6 +128,8 @@ If the picture is mirrored or the colors look inverted, change `LCD_MIRROR_X`, `
 | `main/rogue_ap.*` | open softAP, captive DNS redirector and credential-capturing portal |
 | `main/repeater.*` | APSTA range extender: NAPT router (armed once the SoftAP is up), per-side byte counters, client list |
 | `main/netid.*` | MAC identity: randomize STA/AP/BT MACs to an HP OUI, persisted and re-applied at boot |
+| `main/bt_mgr.*` | BLE (NimBLE): observer scan, Nordic-UART peripheral, broadcast RF test; coexists with Wi-Fi |
+| `main/ui/ui_bluetooth.cpp` | Bluetooth screen (Scan / Device / Broadcast tabs) |
 | `main/ui/ui_identity.cpp` | MAC identity page (randomize / factory) |
 | `main/wifi_csi.*` | CSI capture + esp-dsp SIMD motion/presence detection |
 | `main/wifi_ftm.*` | 802.11mc Fine Timing Measurement distance sessions |

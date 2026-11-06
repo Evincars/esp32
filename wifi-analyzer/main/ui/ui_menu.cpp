@@ -3,6 +3,7 @@
 #include <ctime>
 
 #include "app_settings.h"
+#include "bt_mgr.h"
 #include "netid.h"
 #include "portscan.h"
 #include "repeater.h"
@@ -31,8 +32,8 @@ static const tile_def_t TILES[] = {
     {"Port scan", UI_SCR_PORTS},    {"Sniffer", UI_SCR_SNIFFER},   {"Deauth", UI_SCR_DEAUTH},
     {"Beacon spam", UI_SCR_BEACON}, {"Rogue AP", UI_SCR_ROGUE},    {"CSI Radar", UI_SCR_CSI},
     {"Locate", UI_SCR_LOCATE},      {"Repeater", UI_SCR_REPEATER}, {"MAC identity", UI_SCR_IDENTITY},
-    {"Web server", UI_SCR_WEB},     {"System", UI_SCR_SYSTEM},     {"Clock", UI_SCR_CLOCK},
-    {"Settings", UI_SCR_SETTINGS},  {"About", UI_SCR_ABOUT},
+    {"Bluetooth", UI_SCR_BLUETOOTH},{"Web server", UI_SCR_WEB},    {"System", UI_SCR_SYSTEM},
+    {"Clock", UI_SCR_CLOCK},        {"Settings", UI_SCR_SETTINGS}, {"About", UI_SCR_ABOUT},
 };
 #define TILE_COUNT (int)(sizeof(TILES) / sizeof(TILES[0]))
 
@@ -139,6 +140,13 @@ static void update(lv_timer_t *)
         }
         case UI_SCR_IDENTITY:
             set_value(i, netid_spoofed() ? UI_COL_ACCENT : dim, "%s", netid_spoofed() ? "HP spoof" : "factory");
+            break;
+        case UI_SCR_BLUETOOTH:
+            if (bt_connected()) set_value(i, UI_COL_GOOD, "connected");
+            else if (bt_broadcast_running()) set_value(i, UI_COL_BAD, "broadcast");
+            else if (bt_peripheral_running()) set_value(i, UI_COL_ACCENT, "advertising");
+            else if (bt_scanning()) set_value(i, UI_COL_ACCENT, "%d scan", bt_scan_count());
+            else set_value(i, dim, "idle");
             break;
         case UI_SCR_WEB:
             if (web_server_running()) set_value(i, UI_COL_GOOD, "on :80");

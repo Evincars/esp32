@@ -3,6 +3,7 @@
 #include "app_settings.h"
 #include "board.h"
 #include "boot_mode.h"
+#include "bt_mgr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -64,6 +65,7 @@ extern "C" void app_main(void)
     wifi_mgr_init();
     sniffer_init();
     repeater_init();
+    bt_init(); /* BLE (NimBLE) alongside Wi-Fi */
 
     if (lvgl_port_lock(portMAX_DELAY)) {
         ui_init(!calibrated, start_screen(view));
