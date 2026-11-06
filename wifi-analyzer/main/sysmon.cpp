@@ -10,9 +10,11 @@
 #include "esp_image_format.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_pm.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "soc/rtc.h"
 
 static const char *TAG = "sysmon";
 
@@ -24,6 +26,38 @@ static sysmon_t s_cur;
 static float s_hist_cpu0[SYSMON_HISTORY], s_hist_cpu1[SYSMON_HISTORY], s_hist_temp[SYSMON_HISTORY];
 static int s_hist_len, s_hist_head; /* head = slot for the next sample */
 static temperature_sensor_handle_t s_tsens;
+
+/* Dynamic frequency scaling: hold a CPU_FREQ_MAX lock while the board is busy so
+   it runs at the top frequency, release it when idle so esp_pm drops to the floor.
+   On the ESP32-S3 the APB clock stays at 80 MHz regardless, so peripherals (the
+   LCD, SPI) are unaffected by the CPU frequency moving. */
+static esp_pm_lock_handle_t s_pm_lock;
+static bool s_pm_held;
+
+static void dfs_init(void)
+{
+    esp_pm_config_t pm = {};
+    pm.max_freq_mhz = 240;
+    pm.min_freq_mhz = 80;
+    pm.light_sleep_enable = false;
+    if (esp_pm_configure(&pm) != ESP_OK) return; /* PM disabled in sdkconfig: measure only */
+    if (esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "sysmon_dfs", &s_pm_lock) == ESP_OK) {
+        esp_pm_lock_acquire(s_pm_lock); /* boot responsive at full speed; the governor eases off */
+        s_pm_held = true;
+    }
+}
+
+static void dfs_govern(float load)
+{
+    if (!s_pm_lock) return;
+    if (!s_pm_held && load > 50) {
+        esp_pm_lock_acquire(s_pm_lock);
+        s_pm_held = true;
+    } else if (s_pm_held && load < 20) {
+        esp_pm_lock_release(s_pm_lock);
+        s_pm_held = false;
+    }
+}
 
 static void read_static(sysmon_t *s)
 {
@@ -71,6 +105,10 @@ static void sample(sysmon_t *s, configRUN_TIME_COUNTER_TYPE prev_idle[2], int64_
     s->psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
     s->uptime_s = (uint32_t)(now / 1000000);
     s->tasks = uxTaskGetNumberOfTasks();
+
+    rtc_cpu_freq_config_t fc;
+    rtc_clk_cpu_freq_get_config(&fc);
+    s->cpu_freq_mhz = fc.freq_mhz;
 }
 
 static void sysmon_task(void *)
@@ -86,6 +124,7 @@ static void sysmon_task(void *)
     for (int tick = 0;; tick++) {
         vTaskDelay(pdMS_TO_TICKS(SAMPLE_MS));
         sample(&s, prev_idle, &prev_t, tick);
+        dfs_govern(std::max(s.cpu[0], s.cpu[1]));
 
         taskENTER_CRITICAL(&s_mux);
         s_cur = s;
@@ -107,6 +146,8 @@ void sysmon_init(void)
         s_tsens = nullptr;
         ESP_LOGW(TAG, "temperature sensor unavailable");
     }
+
+    dfs_init();
 
     sysmon_t s = {};
     read_static(&s);

@@ -9,6 +9,7 @@
 
 typedef struct {
     float cpu[2];   /* % busy per core over the last second */
+    uint32_t cpu_freq_mhz; /* current (dynamically scaled) CPU frequency */
     float temp_c;   /* die temperature */
     float temp_min, temp_max;
     bool temp_ok;

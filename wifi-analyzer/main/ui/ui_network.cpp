@@ -273,8 +273,16 @@ static void on_lan_scan(lv_event_t *)
         ui_toast("Connect to a network first", UI_COL_ACCENT);
         return;
     }
+    int pct = 0;
+    if (wifi_mgr_lan_scanning(&pct)) {
+        ui_toast("Already discovering...", UI_COL_ACCENT);
+        return;
+    }
     if (wifi_mgr_lan_scan_start()) {
         lv_obj_clean(S.lan_list);
+        ui_toast("Re-discovering LAN hosts", UI_COL_ACCENT);
+    } else {
+        ui_toast("Could not start discovery", UI_COL_BAD);
     }
 }
 
@@ -329,6 +337,13 @@ static void build_lan(lv_obj_t *tab)
 }
 
 /* ---------------- screen ---------------- */
+
+static uint32_t s_active_tab; /* remember Status vs LAN hosts across visits */
+
+static void on_tab_changed(lv_event_t *e)
+{
+    s_active_tab = lv_tabview_get_tab_active((lv_obj_t *)lv_event_get_target(e));
+}
 
 static void poll(lv_timer_t *)
 {
@@ -385,6 +400,8 @@ lv_obj_t *ui_network_create(void)
     build_lan(S.lan_tab);
     rebuild_status(wifi_mgr_state());
     update_lan();
+    lv_tabview_set_active(tv, s_active_tab, LV_ANIM_OFF);
+    lv_obj_add_event_cb(tv, on_tab_changed, LV_EVENT_VALUE_CHANGED, nullptr);
     ui_screen_timer(content, poll, 500, nullptr);
     return lv_obj_get_screen(content);
 }

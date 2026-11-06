@@ -17,7 +17,7 @@ static struct {
     lv_obj_t *chart;
     lv_chart_series_t *s_cpu0, *s_cpu1, *s_temp;
     lv_obj_t *ram_bar, *ram_lbl, *psram_bar, *psram_lbl, *app_bar, *app_lbl;
-    lv_obj_t *v_min_heap, *v_largest, *v_tasks, *v_temp_range, *v_batt, *v_txpow, *v_uptime;
+    lv_obj_t *v_min_heap, *v_largest, *v_tasks, *v_temp_range, *v_batt, *v_txpow, *v_uptime, *v_freq;
 } S;
 
 static const char *reset_reason_str(esp_reset_reason_t r)
@@ -82,6 +82,10 @@ static void update(lv_timer_t *)
 
     lv_label_set_text_fmt(S.v_cpu0, "%d%%", (int)s.cpu[0]);
     lv_label_set_text_fmt(S.v_cpu1, "%d%%", (int)s.cpu[1]);
+    if (S.v_freq) {
+        lv_label_set_text_fmt(S.v_freq, "%lu MHz  (dynamic 80-240)", (unsigned long)s.cpu_freq_mhz);
+        lv_obj_set_style_text_color(S.v_freq, s.cpu_freq_mhz >= 240 ? UI_COL_GOOD : UI_COL_TEXT, 0);
+    }
     lv_obj_set_style_text_color(S.v_cpu0, s.cpu[0] > 85 ? UI_COL_BAD : UI_COL_TEXT, 0);
     lv_obj_set_style_text_color(S.v_cpu1, s.cpu[1] > 85 ? UI_COL_BAD : UI_COL_TEXT, 0);
     if (s.temp_ok) {
@@ -192,6 +196,7 @@ lv_obj_t *ui_system_create(void)
     sysmon_get(&s);
     lv_label_set_text_fmt(ui_kv_row(c, "Chip"), "%s rev %d.%d, %d cores @ %d MHz", CONFIG_IDF_TARGET, chip.revision / 100,
                           chip.revision % 100, chip.cores, CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ);
+    S.v_freq = ui_kv_row(c, "CPU frequency");
     lv_label_set_text_fmt(ui_kv_row(c, "Flash / PSRAM"), "%lu MB / %lu MB", (unsigned long)(s.flash_size >> 20),
                           (unsigned long)((s.psram_total + (512 << 10)) >> 20));
     S.v_min_heap = ui_kv_row(c, "Lowest free RAM");

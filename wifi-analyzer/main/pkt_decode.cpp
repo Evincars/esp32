@@ -6,7 +6,9 @@
 #include <cstdio>
 #include <cstring>
 
+#include "esp_heap_caps.h"
 #include "lwip/sockets.h"
+#include "miniz.h"
 #include "oui.h"
 #include "portscan.h"
 
@@ -1193,6 +1195,67 @@ static bool http_hdr(const uint8_t *b, int hlen, const char *name, const char *n
     return false;
 }
 
+/* De-chunks an HTTP/1.1 "Transfer-Encoding: chunked" body into `out`. Returns the
+   de-chunked length; stops cleanly at the terminating 0-chunk or at a chunk the
+   capture truncated. */
+static int http_dechunk(const uint8_t *src, int n, uint8_t *out, int outcap)
+{
+    int si = 0, oi = 0;
+    while (si < n && oi < outcap) {
+        int sz = 0, digits = 0;
+        while (si < n && isxdigit(src[si])) {
+            int c = src[si];
+            int v = c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10;
+            sz = sz * 16 + v;
+            si++;
+            digits++;
+        }
+        while (si < n && src[si] != '\n') si++; /* skip chunk extensions / CR */
+        if (si < n) si++;                       /* skip the LF */
+        if (!digits || sz <= 0) break;          /* final 0-chunk or malformed */
+        int take = sz;
+        if (si + take > n) take = n - si;       /* capture cut this chunk short */
+        if (oi + take > outcap) take = outcap - oi;
+        memcpy(out + oi, src + si, take);
+        oi += take;
+        if (take < sz) break;                   /* truncated: nothing more to read */
+        si += sz;
+        while (si < n && (src[si] == '\r' || src[si] == '\n')) si++; /* trailing CRLF */
+    }
+    return oi;
+}
+
+/* Inflates a gzip (is_gzip) or zlib/deflate body into `out` using the ROM miniz
+   tinfl decoder. Returns bytes produced (partial output is kept when the captured
+   input was truncated), or 0 if nothing could be decoded. */
+static int http_inflate(const uint8_t *src, int srclen, uint8_t *out, int outcap, bool is_gzip)
+{
+    if (is_gzip) {
+        if (srclen < 18 || src[0] != 0x1f || src[1] != 0x8b || src[2] != 8) return 0;
+        int hp = 10;
+        uint8_t flg = src[3];
+        if (flg & 4) { if (hp + 2 > srclen) return 0; hp += 2 + (src[hp] | (src[hp + 1] << 8)); } /* FEXTRA */
+        if (flg & 8) { while (hp < srclen && src[hp]) hp++; hp++; }                                 /* FNAME */
+        if (flg & 16) { while (hp < srclen && src[hp]) hp++; hp++; }                                /* FCOMMENT */
+        if (flg & 2) hp += 2;                                                                       /* FHCRC */
+        if (hp >= srclen) return 0;
+        src += hp;
+        srclen -= hp;
+    }
+    tinfl_decompressor *d = (tinfl_decompressor *)heap_caps_malloc(sizeof(tinfl_decompressor), MALLOC_CAP_SPIRAM);
+    if (!d) d = (tinfl_decompressor *)heap_caps_malloc(sizeof(tinfl_decompressor), MALLOC_CAP_DEFAULT);
+    if (!d) return 0;
+    tinfl_init(d);
+    size_t in_bytes = srclen, out_bytes = outcap;
+    int flags = TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
+    if (!is_gzip) flags |= TINFL_FLAG_PARSE_ZLIB_HEADER; /* "deflate" content-encoding is zlib-wrapped */
+    tinfl_decompress(d, src, &in_bytes, out, out, &out_bytes, flags);
+    heap_caps_free(d);
+    return (int)out_bytes; /* whatever was produced before DONE / truncation */
+}
+
+#define PL_WORK 4096 /* split in half: de-chunk scratch + inflate scratch */
+
 } // namespace
 
 int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **kind)
@@ -1244,41 +1307,62 @@ int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **ki
     int body_type = 0; /* 0 none, 1 json, 2 xml, 3 text */
     if (sep >= 0) {
         bool chunked = http_hdr(b, hlen, "transfer-encoding", "chunked");
-        bool gzipped = http_hdr(b, hlen, "content-encoding", nullptr);
+        bool enc_gzip = http_hdr(b, hlen, "content-encoding", "gzip");
+        bool enc_defl = http_hdr(b, hlen, "content-encoding", "deflate");
+        bool enc_br = http_hdr(b, hlen, "content-encoding", "br");
         bool ct_json = http_hdr(b, hlen, "content-type", "json");
         bool ct_xml = http_hdr(b, hlen, "content-type", "xml");
-        int bo = sep + 4;
-        while (bo < plen && (b[bo] == ' ' || b[bo] == '\r' || b[bo] == '\n' || b[bo] == '\t')) bo++;
-        if (chunked) {
-            /* skip the first chunk-size line ("1f4\r\n") so the JSON/XML that follows
-               isn't mistaken for text and doesn't get a stray length prefix */
-            int q = bo;
-            while (q < plen && b[q] != '\n') q++;
-            if (q < plen) {
-                bo = q + 1;
-                while (bo < plen && (b[bo] == '\r' || b[bo] == '\n')) bo++;
+
+        const uint8_t *body = b + sep + 4;
+        int blen = plen - (sep + 4);
+
+        /* de-chunk and/or inflate into a per-call PSRAM scratch (no shared state,
+           so this stays safe when the device UI and the web server decode at once) */
+        uint8_t *work = nullptr;
+        if (chunked || enc_gzip || enc_defl) {
+            work = (uint8_t *)heap_caps_malloc(PL_WORK, MALLOC_CAP_SPIRAM);
+            if (!work) work = (uint8_t *)heap_caps_malloc(PL_WORK, MALLOC_CAP_DEFAULT);
+        }
+        if (chunked && work) {
+            int dl = http_dechunk(body, blen, work, PL_WORK / 2);
+            body = work;
+            blen = dl;
+        }
+        bool compressed = enc_gzip || enc_defl;
+        if (compressed && work && blen > 0) {
+            uint8_t *infl = work + PL_WORK / 2;
+            int il = http_inflate(body, blen, infl, PL_WORK / 2, enc_gzip);
+            if (il > 0) {
+                body = infl;
+                blen = il;
+                compressed = false;
             }
         }
-        int blen = plen - bo;
-        if (gzipped) {
-            /* body is gzip/deflate/br compressed; we can't inflate it on the device */
-            const char *msg = "\n\n[compressed response body - cannot decode on device]";
+
+        if (enc_br || compressed) {
+            const char *msg = enc_br ? "\n\n[brotli-compressed body - cannot decode on device]"
+                                     : "\n\n[compressed body - could not decode here]";
             for (const char *s = msg; *s && k + 1 < out_len;) put(out, out_len, k, *s++);
             body_type = 3;
-        } else if (blen > 0) {
-            if (k + 2 < out_len) { out[k++] = '\n'; out[k++] = '\n'; }
-            char first = (char)b[bo];
-            if (first == '{' || first == '[' || ct_json) {
-                body_type = 1;
-                pretty_json(b + bo, blen, out, out_len, k);
-            } else {
-                body_type = (first == '<' || ct_xml) ? 2 : 3;
-                for (int i = 0; i < blen && k + 1 < out_len; i++) {
-                    if (b[bo + i] == '\r') continue;
-                    put(out, out_len, k, (char)b[bo + i]);
+        } else {
+            int o = 0;
+            while (o < blen && (body[o] == ' ' || body[o] == '\r' || body[o] == '\n' || body[o] == '\t')) o++;
+            if (o < blen) {
+                if (k + 2 < out_len) { out[k++] = '\n'; out[k++] = '\n'; }
+                char first = (char)body[o];
+                if (first == '{' || first == '[' || ct_json) {
+                    body_type = 1;
+                    pretty_json(body + o, blen - o, out, out_len, k);
+                } else {
+                    body_type = (first == '<' || ct_xml) ? 2 : 3;
+                    for (int i = o; i < blen && k + 1 < out_len; i++) {
+                        if (body[i] == '\r') continue;
+                        put(out, out_len, k, (char)body[i]);
+                    }
                 }
             }
         }
+        if (work) heap_caps_free(work);
     }
     out[k] = 0;
     if (kind) {

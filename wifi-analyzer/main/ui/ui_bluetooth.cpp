@@ -307,6 +307,13 @@ static void on_delete(lv_event_t *)
     if (bt_scanning()) bt_scan_stop(); /* free the radio when leaving; peripheral/broadcast persist */
 }
 
+static uint32_t s_bt_tab; /* remember Scan/Device/Broadcast across visits */
+
+static void on_tab_changed(lv_event_t *e)
+{
+    s_bt_tab = lv_tabview_get_tab_active((lv_obj_t *)lv_event_get_target(e));
+}
+
 static void style_tabview(lv_obj_t *tv)
 {
     lv_obj_set_style_bg_opa(tv, LV_OPA_TRANSP, 0);
@@ -354,6 +361,8 @@ lv_obj_t *ui_bluetooth_create(void)
     build_scan_tab(S.scan_tab);
     build_dev_tab(S.dev_tab);
     build_bcast_tab(S.bcast_tab);
+    lv_tabview_set_active(tv, s_bt_tab, LV_ANIM_OFF);
+    lv_obj_add_event_cb(tv, on_tab_changed, LV_EVENT_VALUE_CHANGED, nullptr);
 
     if (!bt_scanning() && !bt_broadcast_running()) bt_scan_start();
     lv_timer_t *t = ui_screen_timer(content, poll, 400, nullptr);

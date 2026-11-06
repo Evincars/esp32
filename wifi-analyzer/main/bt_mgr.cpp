@@ -343,7 +343,7 @@ bool bt_broadcast_start(void)
     if (s_periph) bt_peripheral_stop();
     s_bcast_count = 0;
     s_broadcast = true;
-    if (xTaskCreate(bcast_task, "bt_bcast", 3072, nullptr, 4, &s_bcast_task) != pdPASS) {
+    if (xTaskCreatePinnedToCore(bcast_task, "bt_bcast", 3072, nullptr, 4, &s_bcast_task, 0) != pdPASS) {
         s_broadcast = false;
         return false;
     }

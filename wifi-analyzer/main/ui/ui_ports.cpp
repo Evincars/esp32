@@ -25,6 +25,7 @@ static struct {
     int nopts;
     uint32_t seen_scan_gen, seen_lan_gen;
     bool shown_running;
+    bool autostart; /* a target IP was tapped: kick off its scan from the first poll */
 } S;
 
 /* copies of the scanner's data for building the view; in PSRAM */
@@ -228,6 +229,19 @@ static void poll(lv_timer_t *)
 {
     ps_status_t st;
     portscan_status(&st);
+
+    /* auto-scan of a tapped host: stop any scan still running from a previous
+       visit, then start ours once it has actually stopped */
+    if (S.autostart && wifi_mgr_state() == WIFI_ST_CONNECTED) {
+        if (st.running) {
+            portscan_stop();
+        } else {
+            S.autostart = false;
+            start_scan();
+            portscan_status(&st);
+        }
+    }
+
     char ip[16];
     if (st.running) {
         ip_text(ip, sizeof(ip), st.current_ip);
@@ -346,7 +360,7 @@ lv_obj_t *ui_ports_create(void)
     if (wifi_mgr_lan_host_count() == 0 && wifi_mgr_state() == WIFI_ST_CONNECTED) wifi_mgr_lan_scan_start();
     if (s_preset_ip) {
         s_preset_ip = 0;
-        start_scan();
+        S.autostart = true; /* started from the first poll, once the screen is up and any stale scan has stopped */
     }
 
     lv_timer_t *t = ui_screen_timer(content, poll, 400, nullptr);

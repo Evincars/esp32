@@ -164,7 +164,7 @@ bool repeater_start(const char *ssid, const char *pass)
        otherwise esp_netif_napt_enable() silently does nothing and no traffic forwards */
     s_running = true;
     s_ready = false;
-    if (xTaskCreate(setup_task, "rep_setup", 3072, nullptr, 4, nullptr) != pdPASS) {
+    if (xTaskCreatePinnedToCore(setup_task, "rep_setup", 3072, nullptr, 4, nullptr, 0) != pdPASS) {
         s_running = false;
         esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
         esp_wifi_set_mode(WIFI_MODE_STA);

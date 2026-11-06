@@ -38,6 +38,12 @@ static const tile_def_t TILES[] = {
 #define TILE_COUNT (int)(sizeof(TILES) / sizeof(TILES[0]))
 
 static lv_obj_t *s_values[TILE_COUNT];
+static int32_t s_scroll_y; /* remember the dashboard scroll position across visits */
+
+static void on_menu_delete(lv_event_t *e)
+{
+    s_scroll_y = lv_obj_get_scroll_y((lv_obj_t *)lv_event_get_user_data(e));
+}
 
 static void on_tile_clicked(lv_event_t *e)
 {
@@ -214,5 +220,11 @@ lv_obj_t *ui_menu_create(void)
 
     lv_timer_t *t = ui_screen_timer(content, update, 1000, nullptr);
     update(t);
+
+    /* restore the previous scroll position so returning to the dashboard lands
+       where the user left off instead of snapping back to the top */
+    lv_obj_add_event_cb(content, on_menu_delete, LV_EVENT_DELETE, content);
+    lv_obj_update_layout(content);
+    lv_obj_scroll_to_y(content, s_scroll_y, LV_ANIM_OFF);
     return lv_obj_get_screen(content);
 }

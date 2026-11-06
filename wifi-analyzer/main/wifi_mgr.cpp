@@ -557,7 +557,7 @@ bool wifi_mgr_lan_scan_start(void)
     if (s_lan_scanning || s_state != WIFI_ST_CONNECTED) return false;
     s_lan_scanning = true;
     s_lan_progress = 0;
-    if (xTaskCreate(lan_scan_task, "lan_scan", 4096, nullptr, 3, nullptr) != pdPASS) {
+    if (xTaskCreatePinnedToCore(lan_scan_task, "lan_scan", 4096, nullptr, 3, nullptr, 0) != pdPASS) {
         s_lan_scanning = false;
         return false;
     }

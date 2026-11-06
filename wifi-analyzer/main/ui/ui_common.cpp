@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 
 #include "app_settings.h"
@@ -30,8 +31,22 @@ void ui_theme_apply(int index)
 
 /* ---------------- navigation ---------------- */
 
+/* Navigation history: ui_go() remembers the screen we leave so ui_back() can
+   return to it (not always the menu). Going Home (the menu) clears the trail. */
+#define UI_NAV_MAX 16
 static ui_screen_id_t s_current = UI_SCR_MENU;
-static ui_screen_id_t s_back_target = UI_SCR_MENU;
+static ui_screen_id_t s_nav[UI_NAV_MAX];
+static int s_nav_depth;
+
+static void nav_push(ui_screen_id_t id)
+{
+    if (s_nav_depth && s_nav[s_nav_depth - 1] == id) return; /* no immediate duplicate */
+    if (s_nav_depth >= UI_NAV_MAX) {
+        memmove(s_nav, s_nav + 1, (UI_NAV_MAX - 1) * sizeof(s_nav[0]));
+        s_nav_depth = UI_NAV_MAX - 1;
+    }
+    s_nav[s_nav_depth++] = id;
+}
 
 /* Header widgets of the screen that is currently being shown. */
 static lv_obj_t *s_hdr_screen;
@@ -80,34 +95,35 @@ void ui_load(lv_obj_t *scr, bool forward)
 
 void ui_go(ui_screen_id_t id)
 {
-    s_back_target = UI_SCR_MENU; /* screens without the shared header don't reset it themselves */
+    if (id == UI_SCR_MENU) s_nav_depth = 0;        /* home clears the trail */
+    else if (id != s_current) nav_push(s_current); /* remember where we came from */
+    bool forward = id != s_current && id != UI_SCR_MENU;
     set_current(id);
     lv_obj_t *scr = create_screen(id);
     if (id == UI_SCR_CALIBRATE || id == UI_SCR_CLOCK) {
         lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_IN, 250, 0, true);
         return;
     }
-    ui_load(scr, id != UI_SCR_MENU);
+    ui_load(scr, forward);
 }
 
 void ui_back(void)
 {
-    ui_screen_id_t target = s_back_target;
-    s_back_target = UI_SCR_MENU;
+    ui_screen_id_t target = s_nav_depth > 0 ? s_nav[--s_nav_depth] : UI_SCR_MENU;
     set_current(target);
     ui_load(create_screen(target), false);
 }
 
 void ui_set_back_target(ui_screen_id_t id)
 {
-    s_back_target = id;
+    /* kept for compatibility; the nav history normally handles back on its own */
+    if (s_nav_depth > 0) s_nav[s_nav_depth - 1] = id;
+    else nav_push(id);
 }
 
 void ui_reload(void)
 {
-    ui_screen_id_t back = s_back_target;
     lv_obj_t *scr = create_screen(s_current);
-    s_back_target = back;
     lv_screen_load_anim(scr, LV_SCR_LOAD_ANIM_NONE, 0, 0, true);
 }
 
@@ -182,7 +198,6 @@ static void on_back_clicked(lv_event_t *)
 
 lv_obj_t *ui_screen_create(const char *title, bool with_back)
 {
-    s_back_target = UI_SCR_MENU;
     lv_obj_t *scr = lv_obj_create(nullptr);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(scr, UI_COL_BG, 0);

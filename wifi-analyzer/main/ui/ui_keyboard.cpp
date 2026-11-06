@@ -25,7 +25,7 @@ static void on_kb_event(lv_event_t *e)
         strlcpy(S.text, lv_textarea_get_text(S.ta), sizeof(S.text));
         if (S.on_done) S.on_done(S.text, S.user);
     } else if (code == LV_EVENT_CANCEL) {
-        ui_back();
+        ui_go(S.back_to); /* the keyboard is modal: return to the screen that opened it */
     }
 }
 
@@ -66,7 +66,6 @@ void ui_text_input(const char *title, const char *placeholder, const char *initi
     S.back_to = back_to;
 
     lv_obj_t *content = ui_screen_create(title, true);
-    ui_set_back_target(back_to);
     lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *scr = lv_obj_get_screen(content);
 

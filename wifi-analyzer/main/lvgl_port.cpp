@@ -10,7 +10,7 @@
 
 static const char *TAG = "lvgl_port";
 
-#define DRAW_BUF_LINES 32   /* internal DMA RAM is tight with Wi-Fi+BLE coexistence; smaller partial buffer */
+#define DRAW_BUF_LINES 20   /* internal DMA RAM is tight with Wi-Fi+BLE; smaller partial buffer */
 #define LVGL_TASK_STACK (12 * 1024)
 #define LVGL_TASK_PRIO 4
 #define LVGL_TASK_CORE 1

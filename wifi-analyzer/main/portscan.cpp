@@ -323,7 +323,7 @@ bool portscan_start(const uint32_t *ips, int n, ps_profile_t profile)
     s_started_us = esp_timer_get_time();
     s_finished_us = 0;
     s_gen = s_gen + 1;
-    if (xTaskCreate(scan_task, "portscan", 6144, nullptr, 3, nullptr) != pdPASS) {
+    if (xTaskCreatePinnedToCore(scan_task, "portscan", 6144, nullptr, 3, nullptr, 0) != pdPASS) {
         s_running = false;
         return false;
     }

@@ -58,9 +58,12 @@ idf_component_register(
         esp_driver_tsens
         esp_event
         esp_http_server
+        esp_hw_support
         esp_lcd
         esp_netif
         esp_partition
+        esp_pm
+        esp_rom
         esp_timer
         esp_wifi
         espressif__esp-dsp
