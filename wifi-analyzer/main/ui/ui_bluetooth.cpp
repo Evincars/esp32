@@ -84,6 +84,9 @@ static void rebuild_list(void)
     int n = bt_scan_get(s_devs, BT_MAX_DEVS);
     std::sort(s_devs, s_devs + n, [](const bt_dev_t &a, const bt_dev_t &b) { return a.rssi > b.rssi; });
 
+    /* keep the user's scroll position: the list is rebuilt on every new/updated
+       device while scanning, which would otherwise snap back to the top each time */
+    int32_t saved_y = lv_obj_get_scroll_y(S.list);
     lv_obj_clean(S.list);
     for (int i = 0; i < n; i++) {
         const bt_dev_t &d = s_devs[i];
@@ -115,6 +118,9 @@ static void rebuild_list(void)
         lv_label_set_text_fmt(rssi, "%d", d.rssi);
         lv_obj_align(rssi, LV_ALIGN_RIGHT_MID, -8, 0);
     }
+    /* restore scroll (clamped by LVGL to the new content height) */
+    lv_obj_update_layout(S.list);
+    lv_obj_scroll_to_y(S.list, saved_y, LV_ANIM_OFF);
 }
 
 static void on_scan_toggle(lv_event_t *)

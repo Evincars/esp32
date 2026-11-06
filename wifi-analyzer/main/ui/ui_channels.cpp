@@ -17,7 +17,9 @@
 #define RSSI_TOP (-30)
 
 #define INFO_H 20
-#define GRAPH_H 166
+/* fill the whole visible content area with the plot (the per-channel strip and the
+   networks table live just below and scroll into view); the plot scales to this */
+#define GRAPH_H (UI_CONTENT_H - INFO_H - 8)
 #define STRIP_H 22
 #define PLOT_PAD_L 24
 #define PLOT_PAD_B 14

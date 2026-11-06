@@ -1161,6 +1161,38 @@ void pretty_json(const uint8_t *b, int len, char *out, size_t cap, size_t &k)
     }
 }
 
+/* Looks through the HTTP header block (first `hlen` bytes, CRLF-separated lines)
+   for a header named `name` (case-insensitive). Returns true if it exists and,
+   when `needle` is given, if its value contains `needle` (case-insensitive). */
+static bool http_hdr(const uint8_t *b, int hlen, const char *name, const char *needle)
+{
+    int nlen = (int)strlen(name);
+    for (int i = 0; i < hlen;) {
+        int ls = i;
+        int le = ls;
+        while (le < hlen && b[le] != '\n') le++;
+        int lineend = (le > ls && b[le - 1] == '\r') ? le - 1 : le;
+        if (lineend - ls > nlen && b[ls + nlen] == ':') {
+            bool match = true;
+            for (int j = 0; j < nlen; j++)
+                if (tolower(b[ls + j]) != tolower((unsigned char)name[j])) { match = false; break; }
+            if (match) {
+                if (!needle) return true;
+                int vlen = (int)strlen(needle);
+                for (int p = ls + nlen + 1; p + vlen <= lineend; p++) {
+                    bool m2 = true;
+                    for (int j = 0; j < vlen; j++)
+                        if (tolower(b[p + j]) != tolower((unsigned char)needle[j])) { m2 = false; break; }
+                    if (m2) return true;
+                }
+                return false;
+            }
+        }
+        i = le + 1;
+    }
+    return false;
+}
+
 } // namespace
 
 int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **kind)
@@ -1211,17 +1243,36 @@ int pkt_payload(const sniff_pkt_t *p, char *out, size_t out_len, const char **ki
 
     int body_type = 0; /* 0 none, 1 json, 2 xml, 3 text */
     if (sep >= 0) {
+        bool chunked = http_hdr(b, hlen, "transfer-encoding", "chunked");
+        bool gzipped = http_hdr(b, hlen, "content-encoding", nullptr);
+        bool ct_json = http_hdr(b, hlen, "content-type", "json");
+        bool ct_xml = http_hdr(b, hlen, "content-type", "xml");
         int bo = sep + 4;
         while (bo < plen && (b[bo] == ' ' || b[bo] == '\r' || b[bo] == '\n' || b[bo] == '\t')) bo++;
+        if (chunked) {
+            /* skip the first chunk-size line ("1f4\r\n") so the JSON/XML that follows
+               isn't mistaken for text and doesn't get a stray length prefix */
+            int q = bo;
+            while (q < plen && b[q] != '\n') q++;
+            if (q < plen) {
+                bo = q + 1;
+                while (bo < plen && (b[bo] == '\r' || b[bo] == '\n')) bo++;
+            }
+        }
         int blen = plen - bo;
-        if (blen > 0) {
+        if (gzipped) {
+            /* body is gzip/deflate/br compressed; we can't inflate it on the device */
+            const char *msg = "\n\n[compressed response body - cannot decode on device]";
+            for (const char *s = msg; *s && k + 1 < out_len;) put(out, out_len, k, *s++);
+            body_type = 3;
+        } else if (blen > 0) {
             if (k + 2 < out_len) { out[k++] = '\n'; out[k++] = '\n'; }
             char first = (char)b[bo];
-            if (first == '{' || first == '[') {
+            if (first == '{' || first == '[' || ct_json) {
                 body_type = 1;
                 pretty_json(b + bo, blen, out, out_len, k);
             } else {
-                body_type = first == '<' ? 2 : 3;
+                body_type = (first == '<' || ct_xml) ? 2 : 3;
                 for (int i = 0; i < blen && k + 1 < out_len; i++) {
                     if (b[bo + i] == '\r') continue;
                     put(out, out_len, k, (char)b[bo + i]);

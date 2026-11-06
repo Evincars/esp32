@@ -35,7 +35,6 @@ static ui_screen_id_t s_back_target = UI_SCR_MENU;
 
 /* Header widgets of the screen that is currently being shown. */
 static lv_obj_t *s_hdr_screen;
-static lv_obj_t *s_hdr_time;
 static lv_obj_t *s_hdr_net;
 static lv_obj_t *s_hdr_batt;
 static lv_obj_t *s_toast;
@@ -163,22 +162,14 @@ static void update_status(lv_timer_t *)
         lv_label_set_text_fmt(s_hdr_batt, "%d%%", s.batt_pct);
         lv_obj_set_style_text_color(s_hdr_batt, s.batt_pct <= 10 ? UI_COL_BAD : UI_COL_TEXT_DIM, 0);
     }
-
-    if (time_sync_valid()) {
-        time_t now = time(nullptr);
-        struct tm tm;
-        localtime_r(&now, &tm);
-        lv_label_set_text_fmt(s_hdr_time, "%02d:%02d", tm.tm_hour, tm.tm_min);
-    } else {
-        lv_label_set_text(s_hdr_time, "");
-    }
+    /* the clock lives on its own screen, so the top bar spends its width on the
+       breadcrumb (screen title) + network name + distance instead */
 }
 
 static void on_screen_delete(lv_event_t *e)
 {
     if (lv_event_get_target(e) == s_hdr_screen) {
         s_hdr_screen = nullptr;
-        s_hdr_time = nullptr;
         s_hdr_net = nullptr;
         s_hdr_batt = nullptr;
     }
@@ -225,18 +216,20 @@ lv_obj_t *ui_screen_create(const char *title, bool with_back)
         lv_obj_center(arrow);
     }
 
-    /* title shrinks (ellipsis) so it never crowds the network name out */
+    /* breadcrumb: the screen title takes the leftover width and is the last thing to
+       ellipsize, so it stays readable ("where am I") no matter what else is shown */
     lv_obj_t *t = ui_label(hdr, &lv_font_montserrat_14, UI_COL_TEXT, title);
     lv_label_set_long_mode(t, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_max_width(t, 118, 0);
+    lv_obj_set_flex_grow(t, 1);
+    lv_obj_set_width(t, 1);
+    lv_obj_set_style_min_width(t, 48, 0);
 
-    /* the network name + distance takes all the leftover width and scrolls if needed */
+    /* network name + distance: capped so it can't crowd out the breadcrumb, scrolls if long */
     s_hdr_net = ui_label(hdr, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
-    lv_obj_set_flex_grow(s_hdr_net, 1);
-    lv_obj_set_width(s_hdr_net, 1); /* grow from a 1px base so flex gives it the slack */
     lv_label_set_long_mode(s_hdr_net, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_style_max_width(s_hdr_net, 150, 0);
+    lv_obj_set_style_text_align(s_hdr_net, LV_TEXT_ALIGN_RIGHT, 0);
 
-    s_hdr_time = ui_label(hdr, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     s_hdr_batt = ui_label(hdr, &lv_font_montserrat_12, UI_COL_TEXT_DIM, "");
     s_hdr_screen = scr;
     update_status(nullptr);
