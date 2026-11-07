@@ -66,6 +66,7 @@ void ui_text_input(const char *title, const char *placeholder, const char *initi
     S.back_to = back_to;
 
     lv_obj_t *content = ui_screen_create(title, true);
+    ui_modal_enter(back_to); /* Back (header arrow or Cancel) returns to the opener */
     lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *scr = lv_obj_get_screen(content);
 

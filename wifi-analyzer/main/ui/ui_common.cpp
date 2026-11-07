@@ -38,6 +38,11 @@ static ui_screen_id_t s_current = UI_SCR_MENU;
 static ui_screen_id_t s_nav[UI_NAV_MAX];
 static int s_nav_depth;
 
+/* A modal overlay (the on-screen keyboard) returns here on Back instead of
+   popping the history, so editing a field returns to the page that opened it. */
+static ui_screen_id_t s_modal_back = UI_SCR_MENU;
+static bool s_modal_active;
+
 static void nav_push(ui_screen_id_t id)
 {
     if (s_nav_depth && s_nav[s_nav_depth - 1] == id) return; /* no immediate duplicate */
@@ -95,8 +100,15 @@ void ui_load(lv_obj_t *scr, bool forward)
     lv_screen_load_anim(scr, forward ? LV_SCR_LOAD_ANIM_MOVE_LEFT : LV_SCR_LOAD_ANIM_MOVE_RIGHT, 220, 0, true);
 }
 
+void ui_modal_enter(ui_screen_id_t back_to)
+{
+    s_modal_back = back_to;
+    s_modal_active = true;
+}
+
 void ui_go(ui_screen_id_t id)
 {
+    s_modal_active = false;                        /* leaving via navigation ends any modal */
     if (id == UI_SCR_MENU) s_nav_depth = 0;        /* home clears the trail */
     else if (id != s_current) nav_push(s_current); /* remember where we came from */
     bool forward = id != s_current && id != UI_SCR_MENU;
@@ -111,6 +123,12 @@ void ui_go(ui_screen_id_t id)
 
 void ui_back(void)
 {
+    if (s_modal_active) { /* dismiss the keyboard back to the page that opened it */
+        s_modal_active = false;
+        set_current(s_modal_back);
+        ui_load(create_screen(s_modal_back), false);
+        return;
+    }
     ui_screen_id_t target = s_nav_depth > 0 ? s_nav[--s_nav_depth] : UI_SCR_MENU;
     set_current(target);
     ui_load(create_screen(target), false);

@@ -225,11 +225,23 @@ static void server_task(void *)
         int cs = accept(ls, (struct sockaddr *)&cli, &cl);
         if (cs < 0) continue; /* timeout: loop and re-check s_stop */
 
+        /* The accepted socket inherits the listener's 1 s recv timeout, which
+           breaks the multi-round-trip SSH handshake (a blocking read stalls past
+           1 s and wolfSSH treats it as an error). Clear it so reads block. */
+        struct timeval none = {0, 0};
+        setsockopt(cs, SOL_SOCKET, SO_RCVTIMEO, &none, sizeof(none));
+
         s_client = true;
         WOLFSSH *ssh = wolfSSH_new(ctx);
         if (ssh) {
             wolfSSH_set_fd(ssh, cs);
-            if (wolfSSH_accept(ssh) == WS_SUCCESS) run_shell(ssh);
+            int r = wolfSSH_accept(ssh);
+            if (r == WS_SUCCESS) {
+                run_shell(ssh);
+            } else {
+                int e = wolfSSH_get_error(ssh);
+                ESP_LOGW(TAG, "handshake failed (accept=%d err=%d %s)", r, e, wolfSSH_ErrorToName(e));
+            }
             wolfSSH_stream_exit(ssh, 0);
             wolfSSH_free(ssh);
         }

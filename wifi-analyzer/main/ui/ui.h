@@ -73,6 +73,8 @@ void ui_go(ui_screen_id_t id);
    current screen redirected it with ui_set_back_target(). */
 void ui_back(void);
 void ui_set_back_target(ui_screen_id_t id);
+/* Marks a modal (the keyboard) as active so Back returns to `back_to`. */
+void ui_modal_enter(ui_screen_id_t back_to);
 /* Rebuilds the current screen in place (after a palette change). */
 void ui_reload(void);
 /* Loads an already-built screen with a slide animation. */
