@@ -13,6 +13,7 @@
 #include "nvs_flash.h"
 #include "repeater.h"
 #include "sniffer.h"
+#include "ssh_server.h"
 #include "sysmon.h"
 #include "time_sync.h"
 #include "touch.h"
@@ -84,6 +85,8 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "auto-connecting to the last saved network");
     }
     if (g_settings.web_autostart) web_server_start();
+
+    ssh_server_init(); /* starts the SSH server if it was enabled in its settings */
 
     /* a second RST press after this point is a normal single press again */
     int64_t elapsed_ms = esp_timer_get_time() / 1000;

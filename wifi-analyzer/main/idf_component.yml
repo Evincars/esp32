@@ -2,3 +2,5 @@ dependencies:
   idf: ">=6.0"
   lvgl/lvgl: "~9.2.2"
   espressif/esp-dsp: "^1.5.0"
+  wolfssl/wolfssl: "^5.6.0"
+  wolfssl/wolfssh: "^1.4.15"

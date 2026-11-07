@@ -16,6 +16,9 @@ idf_component_register(
         "time_sync.cpp"
         "touch.cpp"
         "web_server.cpp"
+        "cli.cpp"
+        "tvcast.cpp"
+        "ssh_server.cpp"
         "wifi_mgr.cpp"
         "wifi_attack.cpp"
         "rogue_ap.cpp"
@@ -44,6 +47,8 @@ idf_component_register(
         "ui/ui_repeater.cpp"
         "ui/ui_identity.cpp"
         "ui/ui_bluetooth.cpp"
+        "ui/ui_tvcast.cpp"
+        "ui/ui_ssh.cpp"
     INCLUDE_DIRS "." "ui"
     EMBED_TXTFILES "web/index.html"
     PRIV_REQUIRES
@@ -67,6 +72,8 @@ idf_component_register(
         esp_timer
         esp_wifi
         espressif__esp-dsp
+        wolfssl__wolfssl
+        wolfssl__wolfssh
         lwip
         nvs_flash
         spi_flash

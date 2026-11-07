@@ -93,3 +93,10 @@ CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=5120
 # buffers + Wi-Fi + BLE controller + coexistence), and the host otherwise
 # fails its first allocation (ble_gap_init -> ENOMEM) and panics in a loop.
 CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+
+# wolfSSH: SSH server on the board (CLI over SSH). Enables WOLFSSL_WOLFSSH,
+# WOLFSSL_KEY_GEN (runtime host-key generation) and the ECC/curve crypto it needs.
+CONFIG_ESP_ENABLE_WOLFSSH=y
+CONFIG_ESP_WOLFSSL_NO_STACK_SIZE_BUILD_WARNING=y
+# wolfSSL 5.x HW-crypto port uses IDF APIs removed in 6.x; use software crypto.
+CONFIG_ESP_WOLFSSL_NO_USE_FAST_MATH=y

@@ -54,6 +54,8 @@ typedef enum {
     UI_SCR_REPEATER,
     UI_SCR_IDENTITY,
     UI_SCR_BLUETOOTH,
+    UI_SCR_TVCAST,
+    UI_SCR_SSH,
     UI_SCR_WEB,
     UI_SCR_SYSTEM,
     UI_SCR_CLOCK,
@@ -120,6 +122,8 @@ lv_obj_t *ui_locate_create(void);
 lv_obj_t *ui_repeater_create(void);
 lv_obj_t *ui_identity_create(void);
 lv_obj_t *ui_bluetooth_create(void);
+lv_obj_t *ui_tvcast_create(void);
+lv_obj_t *ui_ssh_create(void);
 lv_obj_t *ui_web_create(void);
 lv_obj_t *ui_system_create(void);
 lv_obj_t *ui_clock_create(void);

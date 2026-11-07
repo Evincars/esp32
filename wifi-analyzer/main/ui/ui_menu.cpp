@@ -9,7 +9,9 @@
 #include "repeater.h"
 #include "rogue_ap.h"
 #include "sniffer.h"
+#include "ssh_server.h"
 #include "sysmon.h"
+#include "tvcast.h"
 #include "time_sync.h"
 #include "ui.h"
 #include "web_server.h"
@@ -32,7 +34,8 @@ static const tile_def_t TILES[] = {
     {"Port scan", UI_SCR_PORTS},    {"Sniffer", UI_SCR_SNIFFER},   {"Deauth", UI_SCR_DEAUTH},
     {"Beacon spam", UI_SCR_BEACON}, {"Rogue AP", UI_SCR_ROGUE},    {"CSI Radar", UI_SCR_CSI},
     {"Locate", UI_SCR_LOCATE},      {"Repeater", UI_SCR_REPEATER}, {"MAC identity", UI_SCR_IDENTITY},
-    {"Bluetooth", UI_SCR_BLUETOOTH},{"Web server", UI_SCR_WEB},    {"System", UI_SCR_SYSTEM},
+    {"Bluetooth", UI_SCR_BLUETOOTH},{"TV cast", UI_SCR_TVCAST},    {"SSH", UI_SCR_SSH},
+    {"Web server", UI_SCR_WEB},     {"System", UI_SCR_SYSTEM},
     {"Clock", UI_SCR_CLOCK},        {"Settings", UI_SCR_SETTINGS}, {"About", UI_SCR_ABOUT},
 };
 #define TILE_COUNT (int)(sizeof(TILES) / sizeof(TILES[0]))
@@ -153,6 +156,14 @@ static void update(lv_timer_t *)
             else if (bt_peripheral_running()) set_value(i, UI_COL_ACCENT, "advertising");
             else if (bt_scanning()) set_value(i, UI_COL_ACCENT, "%d scan", bt_scan_count());
             else set_value(i, dim, "idle");
+            break;
+        case UI_SCR_TVCAST:
+            set_value(i, dim, "DIAL");
+            break;
+        case UI_SCR_SSH:
+            if (ssh_server_running()) set_value(i, ssh_server_clients() ? UI_COL_GOOD : UI_COL_ACCENT, ":%u%s",
+                                                ssh_server_port(), ssh_server_clients() ? " conn" : "");
+            else set_value(i, dim, "off");
             break;
         case UI_SCR_WEB:
             if (web_server_running()) set_value(i, UI_COL_GOOD, "on :80");

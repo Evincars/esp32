@@ -43,6 +43,14 @@ Built with ESP-IDF 6.1 and LVGL 9.2.
     app) can connect and exchange text both ways; shows a console of what the phone sends and a Send button.
   - *Broadcast* - a non-connectable advertising airtime/RF test (confirm-gated, benign payload, rotating random
     addresses). Deliberately **not** crafted to trigger pairing/notification pop-ups on other devices.
+- **SSH server** - log in over SSH (wolfSSH) and drive the toolkit from a terminal: `ssh root@<board-ip>`.
+  The console has commands for `sys`, `net`, `scan`, `hosts`, `ports <ip>` and `tv` (see `help`), so a LAN scan or
+  port scan shows up in your PC terminal. Editable user/password/port, an auto-generated ECC host key (stored in
+  NVS), and an on-device enable toggle. Crypto is software-only (the wolfSSL ESP32 hardware-crypto port predates
+  ESP-IDF 6.1), so the first key exchange takes a few seconds. Set up on the **SSH** tile.
+- **TV cast** - finds DIAL devices on the LAN over SSDP (a Samsung TV exposes DIAL on port 8008) and launches apps
+  on them: open **YouTube** (optionally playing a video by id), launch **Netflix**, or stop an app. Free-text
+  search is not part of the DIAL protocol, so videos are started by id. On the **TV cast** tile.
 - **Web server** - HTTP dashboard on port 80 (QR code on the device) for any phone/PC on the same network: system
   metrics with a history chart, Wi-Fi details, AP table, LAN hosts, port scan results and a live packet list with
   per-layer detail. Read-only, plus a "Rescan" button. Optionally started at boot.
@@ -98,7 +106,10 @@ idf.py set-target esp32s3   # once
 idf.py build flash monitor
 ```
 
-LVGL is fetched automatically by the component manager (`main/idf_component.yml`).
+LVGL, esp-dsp and wolfSSL/wolfSSH are fetched automatically by the component manager
+(`main/idf_component.yml`). The registry wolfSSL predates ESP-IDF 6.1, so the top-level
+`CMakeLists.txt` forces those two components to C17 and all-software crypto - see the
+comment there if you change the dependency versions.
 
 ## First boot
 
@@ -130,6 +141,11 @@ If the picture is mirrored or the colors look inverted, change `LCD_MIRROR_X`, `
 | `main/netid.*` | MAC identity: randomize STA/AP/BT MACs to an HP OUI, persisted and re-applied at boot |
 | `main/bt_mgr.*` | BLE (NimBLE): observer scan, Nordic-UART peripheral, broadcast RF test; coexists with Wi-Fi |
 | `main/ui/ui_bluetooth.cpp` | Bluetooth screen (Scan / Device / Broadcast tabs) |
+| `main/cli.*` | transport-agnostic command console (scan/hosts/ports/tv/sys...) shared by SSH |
+| `main/ssh_server.*` | wolfSSH server: ECC host key, password auth, shell channel into the CLI |
+| `main/tvcast.*` | DIAL control: SSDP discovery and app launch/stop (YouTube, Netflix) |
+| `main/ui/ui_ssh.cpp` | SSH setup page (enable, user/password/port, host key) |
+| `main/ui/ui_tvcast.cpp` | TV cast page (discover devices, launch apps) |
 | `main/ui/ui_identity.cpp` | MAC identity page (randomize / factory) |
 | `main/wifi_csi.*` | CSI capture + esp-dsp SIMD motion/presence detection |
 | `main/wifi_ftm.*` | 802.11mc Fine Timing Measurement distance sessions |
