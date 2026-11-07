@@ -83,8 +83,9 @@ static void update(lv_timer_t *)
     lv_label_set_text_fmt(S.v_cpu0, "%d%%", (int)s.cpu[0]);
     lv_label_set_text_fmt(S.v_cpu1, "%d%%", (int)s.cpu[1]);
     if (S.v_freq) {
-        lv_label_set_text_fmt(S.v_freq, "%lu MHz  (dynamic 80-240)", (unsigned long)s.cpu_freq_mhz);
-        lv_obj_set_style_text_color(S.v_freq, s.cpu_freq_mhz >= 240 ? UI_COL_GOOD : UI_COL_TEXT, 0);
+        /* both cores run from one CPU clock on the S3; this is the live, DFS-scaled value */
+        lv_label_set_text_fmt(S.v_freq, "%lu MHz  (both cores, 80-240 dyn)", (unsigned long)s.cpu_freq_mhz);
+        lv_obj_set_style_text_color(S.v_freq, s.cpu_freq_mhz >= 240 ? UI_COL_GOOD : UI_COL_ACCENT, 0);
     }
     lv_obj_set_style_text_color(S.v_cpu0, s.cpu[0] > 85 ? UI_COL_BAD : UI_COL_TEXT, 0);
     lv_obj_set_style_text_color(S.v_cpu1, s.cpu[1] > 85 ? UI_COL_BAD : UI_COL_TEXT, 0);
@@ -178,6 +179,11 @@ lv_obj_t *ui_system_create(void)
     ui_label(legend, &lv_font_montserrat_10, UI_COL_GOOD, "CPU 1 %");
     ui_label(legend, &lv_font_montserrat_10, UI_COL_TEXT_DIM, "temp 20-80 °C");
     ui_label(legend, &lv_font_montserrat_10, UI_COL_TEXT_DIM, "last 60 s");
+
+    lv_obj_t *tbtn = ui_button_outline(content, "Running tasks " LV_SYMBOL_RIGHT);
+    lv_obj_set_size(tbtn, LV_PCT(100), 32);
+    lv_obj_add_event_cb(
+        tbtn, [](lv_event_t *) { ui_go(UI_SCR_TASKS); }, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *mem = ui_card(content);
     lv_obj_set_size(mem, LV_PCT(100), LV_SIZE_CONTENT);

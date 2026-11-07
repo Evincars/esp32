@@ -58,6 +58,7 @@ typedef enum {
     UI_SCR_SSH,
     UI_SCR_WEB,
     UI_SCR_SYSTEM,
+    UI_SCR_TASKS,
     UI_SCR_CLOCK,
     UI_SCR_SETTINGS,
     UI_SCR_ABOUT,
@@ -128,6 +129,7 @@ lv_obj_t *ui_tvcast_create(void);
 lv_obj_t *ui_ssh_create(void);
 lv_obj_t *ui_web_create(void);
 lv_obj_t *ui_system_create(void);
+lv_obj_t *ui_tasks_create(void);
 lv_obj_t *ui_clock_create(void);
 lv_obj_t *ui_settings_create(void);
 lv_obj_t *ui_about_create(void);

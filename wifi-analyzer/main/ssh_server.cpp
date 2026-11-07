@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "cli.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -31,6 +32,7 @@ static uint32_t s_hostkey_sz;
 
 static volatile bool s_running, s_stop, s_client;
 static TaskHandle_t s_task;
+static StackType_t *s_stack; /* PSRAM stack for the SSH task */
 
 /* ---------------- NVS ---------------- */
 
@@ -180,6 +182,9 @@ static void run_shell(WOLFSSH *ssh)
 static void server_task(void *)
 {
     wolfSSH_Init();
+#ifdef DEBUG_WOLFSSH
+    wolfSSH_Debugging_ON(); /* prints the handshake / algorithm negotiation to serial */
+#endif
     WOLFSSH_CTX *ctx = wolfSSH_CTX_new(WOLFSSH_ENDPOINT_SERVER, nullptr);
     if (!ctx) {
         ESP_LOGE(TAG, "CTX_new failed");
@@ -277,7 +282,18 @@ bool ssh_server_start(void)
     hostkey_save();
     s_stop = false;
     s_running = true;
-    if (xTaskCreatePinnedToCore(server_task, "sshd", SSH_TASK_STACK, nullptr, 4, &s_task, 0) != pdPASS) {
+
+    /* Put the big SSH/crypto stack in PSRAM so it doesn't eat scarce internal
+       DRAM. The task itself never touches flash (NVS writes happen in the caller),
+       so a PSRAM stack is safe here. */
+    static StaticTask_t s_tcb;
+    if (!s_stack) s_stack = (StackType_t *)heap_caps_malloc(SSH_TASK_STACK, MALLOC_CAP_SPIRAM);
+    if (s_stack) {
+        s_task = xTaskCreateStaticPinnedToCore(server_task, "sshd", SSH_TASK_STACK, nullptr, 4, s_stack, &s_tcb, 0);
+    } else if (xTaskCreatePinnedToCore(server_task, "sshd", SSH_TASK_STACK, nullptr, 4, &s_task, 0) != pdPASS) {
+        s_task = nullptr;
+    }
+    if (!s_task) {
         s_running = false;
         return false;
     }

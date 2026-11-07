@@ -100,3 +100,10 @@ CONFIG_ESP_ENABLE_WOLFSSH=y
 CONFIG_ESP_WOLFSSL_NO_STACK_SIZE_BUILD_WARNING=y
 # wolfSSL 5.x HW-crypto port uses IDF APIs removed in 6.x; use software crypto.
 CONFIG_ESP_WOLFSSL_NO_USE_FAST_MATH=y
+
+# Allow FreeRTOS task stacks in PSRAM (used for the heavy SSH/crypto task) so the
+# tight internal DRAM is spared.
+CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y
+# Verbose wolfSSH handshake logging on the serial console, to debug SSH key
+# exchange / algorithm negotiation against modern OpenSSH clients.
+CONFIG_ESP_WOLFSSL_DEBUG_WOLFSSH=y

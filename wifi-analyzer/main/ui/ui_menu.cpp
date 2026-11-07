@@ -27,16 +27,25 @@
 typedef struct {
     const char *title;
     ui_screen_id_t target;
+    const char *cat; /* category header shown before this tile when it changes */
 } tile_def_t;
 
 static const tile_def_t TILES[] = {
-    {"Scanner", UI_SCR_SCANNER},    {"Channels", UI_SCR_CHANNELS}, {"Network", UI_SCR_NETWORK},
-    {"Port scan", UI_SCR_PORTS},    {"Sniffer", UI_SCR_SNIFFER},   {"Deauth", UI_SCR_DEAUTH},
-    {"Beacon spam", UI_SCR_BEACON}, {"Rogue AP", UI_SCR_ROGUE},    {"CSI Radar", UI_SCR_CSI},
-    {"Locate", UI_SCR_LOCATE},      {"Repeater", UI_SCR_REPEATER}, {"MAC identity", UI_SCR_IDENTITY},
-    {"Bluetooth", UI_SCR_BLUETOOTH},{"TV cast", UI_SCR_TVCAST},    {"SSH", UI_SCR_SSH},
-    {"Web server", UI_SCR_WEB},     {"System", UI_SCR_SYSTEM},
-    {"Clock", UI_SCR_CLOCK},        {"Settings", UI_SCR_SETTINGS}, {"About", UI_SCR_ABOUT},
+    {"Scanner", UI_SCR_SCANNER, "WI-FI"}, {"Channels", UI_SCR_CHANNELS, nullptr},
+    {"Network", UI_SCR_NETWORK, nullptr}, {"Port scan", UI_SCR_PORTS, nullptr},
+    {"Sniffer", UI_SCR_SNIFFER, nullptr},
+
+    {"Deauth", UI_SCR_DEAUTH, "RF / ATTACKS"}, {"Beacon spam", UI_SCR_BEACON, nullptr},
+    {"Rogue AP", UI_SCR_ROGUE, nullptr},       {"CSI Radar", UI_SCR_CSI, nullptr},
+    {"Locate", UI_SCR_LOCATE, nullptr},
+
+    {"Repeater", UI_SCR_REPEATER, "NETWORK TOOLS"}, {"MAC identity", UI_SCR_IDENTITY, nullptr},
+    {"SSH", UI_SCR_SSH, nullptr},                   {"Web server", UI_SCR_WEB, nullptr},
+
+    {"Bluetooth", UI_SCR_BLUETOOTH, "DEVICES"}, {"TV cast", UI_SCR_TVCAST, nullptr},
+
+    {"System", UI_SCR_SYSTEM, "SYSTEM"}, {"Clock", UI_SCR_CLOCK, nullptr},
+    {"Settings", UI_SCR_SETTINGS, nullptr}, {"About", UI_SCR_ABOUT, nullptr},
 };
 #define TILE_COUNT (int)(sizeof(TILES) / sizeof(TILES[0]))
 
@@ -207,6 +216,12 @@ lv_obj_t *ui_menu_create(void)
     const int tile_w = (320 - 2 * 6 - (COLS - 1) * GAP) / COLS;
 
     for (int i = 0; i < TILE_COUNT; i++) {
+        if (TILES[i].cat) {
+            /* full-width category header forces a new flex-wrap row */
+            lv_obj_t *cap = ui_label(content, &lv_font_montserrat_12, UI_COL_ACCENT, TILES[i].cat);
+            lv_obj_set_width(cap, LV_PCT(100));
+            lv_obj_set_style_pad_top(cap, i ? 6 : 0, 0);
+        }
         lv_obj_t *tile = lv_button_create(content);
         lv_obj_remove_style_all(tile);
         lv_obj_set_size(tile, tile_w, TILE_H);

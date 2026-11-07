@@ -49,6 +49,7 @@ idf_component_register(
         "ui/ui_bluetooth.cpp"
         "ui/ui_tvcast.cpp"
         "ui/ui_ssh.cpp"
+        "ui/ui_tasks.cpp"
     INCLUDE_DIRS "." "ui"
     EMBED_TXTFILES "web/index.html"
     PRIV_REQUIRES
