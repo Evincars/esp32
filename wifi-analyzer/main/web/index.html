@@ -51,7 +51,31 @@ input{background:var(--bg);color:var(--text);border:1px solid var(--border);bord
 .layer h3 .osi{color:var(--accent);min-width:110px}
 pre{margin:10px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dim);overflow-x:auto}
 .empty{color:var(--dim);font-size:13px;padding:6px 0}
-@media (max-width:560px){.tiles{grid-template-columns:repeat(2,1fr)}main{padding:10px}header{padding:12px 10px}}
+.iconbtn{cursor:pointer;color:var(--accent);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-size:12px;user-select:none}
+.iconbtn:hover{border-color:var(--accent)}
+/* modal dialog */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:50;padding:18px;overflow:auto}
+.modal.show{display:flex}
+.sheet{background:var(--surface);border:1px solid var(--border);border-radius:8px;max-width:780px;width:100%;padding:14px 18px;box-shadow:0 12px 48px rgba(0,0,0,.55)}
+.sheet h3{margin:0 0 12px;font-size:15px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sheet .x{cursor:pointer;color:var(--dim);border:1px solid var(--border);border-radius:4px;padding:2px 9px;font-size:12px}
+/* collapsible JSON / XML tree */
+.tree{font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;overflow:auto;max-height:70vh}
+.tree details{margin-left:13px;border-left:1px solid var(--border);padding-left:8px}
+.tree summary{cursor:pointer;list-style:none;margin-left:-13px}
+.tree summary::-webkit-details-marker{display:none}
+.tree summary::before{content:'▸';color:var(--dim);display:inline-block;width:13px}
+.tree details[open]>summary::before{content:'▾'}
+.tree .k{color:var(--accent)}.tree .s{color:var(--good)}.tree .n{color:var(--bad)}.tree .bo{color:var(--accent)}
+.tree .tg{color:var(--accent)}.tree .muted{color:var(--dim)}.tree div{margin-left:13px}
+/* OSI encapsulation diagram */
+.encbar{display:flex;height:34px;border-radius:5px;overflow:hidden;border:1px solid var(--border);margin:4px 0 14px}
+.encbar>div{display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text);overflow:hidden;white-space:nowrap;min-width:2px}
+.osit{width:100%;border-collapse:collapse;font-size:12px}
+.osit td,.osit th{border:1px solid var(--border);padding:5px 8px;text-align:left;vertical-align:top}
+.osit th{color:var(--dim);font-weight:600}
+.osit .ln{color:var(--accent);font-weight:600;white-space:nowrap}
+@media (max-width:560px){.tiles{grid-template-columns:repeat(2,1fr)}main{padding:10px}header{padding:12px 10px}.osit .hide{display:none}}
 </style>
 </head>
 <body>
@@ -76,6 +100,11 @@ pre{margin:10px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,mon
   <section>
     <h2>Wi-Fi <span class="aside" id="wstate"></span></h2>
     <dl class="kv" id="wifi"></dl>
+  </section>
+
+  <section id="sshsec">
+    <h2>SSH server <span class="aside" id="sshstate"></span></h2>
+    <dl class="kv" id="ssh"></dl>
   </section>
 
   <section id="repsec" style="display:none">
@@ -106,13 +135,14 @@ pre{margin:10px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,mon
     <div id="detail"></div>
   </section>
 </main>
+<div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet"><h3><span id="mtitle"></span><span class="x" onclick="closeModal()">✕ close</span></h3><div id="mbody"></div></div></div>
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const kb = b => (b / 1024).toFixed(0) + ' KB';
 const mb = b => (b / 1048576).toFixed(1) + ' MB';
 const css = document.documentElement.style;
-let themeName = '', pkLast = 0, pkRows = [], selSeq = 0;
+let themeName = '', pkLast = 0, pkRows = [], selSeq = 0, cur = {};
 
 async function get(url) { const r = await fetch(url, {cache: 'no-store'}); if (!r.ok) throw new Error(r.status); return r.json(); }
 function rssiClass(r) { return r >= -60 ? 'good' : r >= -75 ? 'acc' : 'bad'; }
@@ -166,6 +196,17 @@ async function status() {
     ['MAC', w.mac], ['Hostname', esc(w.hostname)], ['Dashboard requests', s.web.requests]] :
     [['MAC', w.mac], ['Hostname', esc(w.hostname)]];
   $('#wifi').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+
+  const sh = s.ssh;
+  if (sh) {
+    $('#sshstate').innerHTML = sh.running ? `<span class="good">running on :${sh.port}${sh.clients ? ' · ' + sh.clients + ' client' : ''}</span>`
+      : `<span class="dim">${sh.enabled ? 'enabled (starting…)' : 'stopped'}</span>`;
+    const host = w.ip || '&lt;board-ip&gt;';
+    $('#ssh').innerHTML = [['State', sh.running ? '<span class="good">running</span>' : 'stopped'],
+      ['Port', sh.port], ['User', esc(sh.user)], ['Clients', sh.clients],
+      ['Connect', `<span class="acc" style="font-family:ui-monospace,monospace">ssh ${esc(sh.user)}@${host} -p ${sh.port}</span>`]]
+      .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  }
 
   const r = s.repeater;
   if (r && r.running) {
@@ -227,6 +268,107 @@ async function packets() {
   renderPackets();
 }
 
+/* ---------- modal + payload / OSI renderers ---------- */
+function openModal(title, html) { $('#mtitle').innerHTML = title; $('#mbody').innerHTML = html; $('#modal').classList.add('show'); }
+function closeModal() { $('#modal').classList.remove('show'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* one collapsible JSON node */
+function jsonNode(key, val) {
+  const k = key !== null ? `<span class="k">${esc(key)}</span>: ` : '';
+  if (val === null) return `<div>${k}<span class="muted">null</span></div>`;
+  if (Array.isArray(val)) {
+    if (!val.length) return `<div>${k}<span class="muted">[ ]</span></div>`;
+    return `<details open><summary>${k}<span class="muted">[${val.length}]</span></summary>${val.map((x, i) => jsonNode(i, x)).join('')}</details>`;
+  }
+  if (typeof val === 'object') {
+    const ks = Object.keys(val);
+    if (!ks.length) return `<div>${k}<span class="muted">{ }</span></div>`;
+    return `<details open><summary>${k}<span class="muted">{${ks.length}}</span></summary>${ks.map(kk => jsonNode(kk, val[kk])).join('')}</details>`;
+  }
+  const cls = typeof val === 'number' ? 'n' : typeof val === 'boolean' ? 'bo' : 's';
+  const disp = typeof val === 'string' ? `"${esc(val)}"` : esc(String(val));
+  return `<div>${k}<span class="${cls}">${disp}</span></div>`;
+}
+/* one collapsible XML / HTML node */
+function xmlNode(node) {
+  if (node.nodeType === 3) { const t = node.textContent.trim(); return t ? `<div class="s">${esc(t)}</div>` : ''; }
+  if (node.nodeType === 8) return `<div class="muted">&lt;!-- ${esc(node.textContent.trim())} --&gt;</div>`;
+  if (node.nodeType !== 1) return '';
+  const tag = node.nodeName.toLowerCase();
+  const attrs = [...node.attributes].map(a => ` <span class="k">${esc(a.name)}</span>=<span class="s">"${esc(a.value)}"</span>`).join('');
+  const kids = [...node.childNodes].map(xmlNode).join('');
+  if (!kids.trim()) return `<div><span class="tg">&lt;${esc(tag)}</span>${attrs}<span class="tg">/&gt;</span></div>`;
+  return `<details open><summary><span class="tg">&lt;${esc(tag)}</span>${attrs}<span class="tg">&gt;</span></summary>${kids}</details>`;
+}
+function renderBody(body) {
+  const t = body.trim();
+  if (t[0] === '{' || t[0] === '[') {
+    try { return ['JSON', `<div class="tree">${jsonNode(null, JSON.parse(t))}</div>`]; } catch (e) {}
+  }
+  if (t[0] === '<') {
+    try {
+      const html = /^<(!doctype|html)/i.test(t);
+      const doc = new DOMParser().parseFromString(t, html ? 'text/html' : 'application/xml');
+      const root = html ? doc.documentElement : doc.documentElement;
+      if (root && !doc.querySelector('parsererror')) return [html ? 'HTML' : 'XML', `<div class="tree">${xmlNode(root)}</div>`];
+    } catch (e) {}
+  }
+  return ['Text', `<pre style="white-space:pre-wrap;color:var(--good);max-height:70vh;overflow:auto">${esc(body)}</pre>`];
+}
+function openBody() {
+  if (!cur.body) return;
+  const [kind, html] = renderBody(cur.body);
+  openModal(`Response body <span class="muted" style="font-size:12px">· ${kind} · ${cur.body.length} B captured</span>`, html);
+}
+
+/* parse the raw frame hex into per-layer byte sizes for the OSI diagram */
+function osiLayers(hexStr, totalLen) {
+  const b = (hexStr.match(/../g) || []).map(h => parseInt(h, 16));
+  const L = [];
+  if (b.length < 14) { L.push({ osi: 1, name: '802.11 / radio', term: 'frame', hdr: totalLen, proto: 'Wi-Fi, Ethernet' }); return L; }
+  let et = (b[12] << 8) | b[13], l2 = 14;
+  if (et === 0x8100) { et = (b[16] << 8) | b[17]; l2 = 18; }
+  L.push({ osi: 2, name: 'Ethernet (link)', term: 'frame', hdr: l2, proto: 'Ethernet, 802.11, ARP, PPP' });
+  let off = l2;
+  const addL4 = (start, p) => {
+    if (p === 6) { const d = (b[start + 12] >> 4) * 4; L.push({ osi: 4, name: 'TCP (transport)', term: 'segment', hdr: d, proto: 'TCP, UDP, QUIC' }); return start + d; }
+    if (p === 17) { L.push({ osi: 4, name: 'UDP (transport)', term: 'datagram', hdr: 8, proto: 'TCP, UDP, QUIC' }); return start + 8; }
+    if (p === 1 || p === 58) { L.push({ osi: 3, name: p === 1 ? 'ICMP' : 'ICMPv6', term: 'packet', hdr: totalLen - start, proto: 'ICMP' }); return totalLen; }
+    return start;
+  };
+  if (et === 0x0800) { const ihl = (b[off] & 0xf) * 4, p = b[off + 9]; L.push({ osi: 3, name: 'IPv4 (network)', term: 'packet', hdr: ihl, proto: 'IPv4, IPv6, ICMP' }); off = addL4(off + ihl, p); }
+  else if (et === 0x86dd) { const p = b[off + 6]; L.push({ osi: 3, name: 'IPv6 (network)', term: 'packet', hdr: 40, proto: 'IPv4, IPv6, ICMPv6' }); off = addL4(off + 40, p); }
+  else if (et === 0x0806) { L.push({ osi: 3, name: 'ARP', term: 'packet', hdr: Math.max(0, totalLen - off), proto: 'ARP' }); off = totalLen; }
+  const app = totalLen - off;
+  if (app > 0) L.push({ osi: 7, name: 'Application (data)', term: 'message', hdr: 0, proto: 'HTTP, DNS, TLS, DHCP, mDNS', body: app });
+  return L;
+}
+function openOsi() {
+  const L = osiLayers(cur.hex, cur.len);
+  const total = cur.len || 1;
+  const cols = ['var(--border)', 'color-mix(in srgb,var(--accent) 55%,transparent)', 'color-mix(in srgb,var(--bad) 45%,transparent)', 'color-mix(in srgb,var(--good) 40%,transparent)'];
+  /* encapsulation bar: each layer header, left-to-right, then the app payload */
+  let seg = '', hl = cur.httpHdr || 0, bl = cur.httpBody || 0;
+  L.forEach((l, i) => {
+    if (l.osi === 7) {
+      if (hl + bl > 0) {
+        seg += `<div style="flex:${hl};background:${cols[1]}" title="HTTP headers ${hl} B">app hdr ${hl}B</div>`;
+        seg += `<div style="flex:${bl};background:${cols[3]}" title="HTTP body ${bl} B">app body ${bl}B</div>`;
+      } else seg += `<div style="flex:${l.body};background:${cols[3]}" title="app data ${l.body} B">app data ${l.body}B</div>`;
+    } else {
+      seg += `<div style="flex:${l.hdr};background:${cols[Math.min(i + 1, 2)]}" title="${l.name} header ${l.hdr} B">${l.name.split(' ')[0]} ${l.hdr}B</div>`;
+    }
+  });
+  const rows = [...L].reverse().map(l => `<tr><td class="ln">L${l.osi}</td><td><b>${esc(l.name)}</b><div class="muted" style="font-size:11px">unit: ${l.term}</div></td><td>${l.osi === 7 ? (hl + bl ? `${hl} B header + ${bl} B body` : l.body + ' B') : l.hdr + ' B header'}</td><td class="hide">${esc(l.proto)}</td></tr>`).join('');
+  const html = `
+    <p class="muted" style="margin:0 0 6px;font-size:12px">Each layer wraps the one above it: the application message is placed inside a transport segment, inside a network packet, inside a link-layer frame. The bar shows this frame's ${total} bytes split into each layer's header and the app payload.</p>
+    <div class="encbar">${seg}</div>
+    <table class="osit"><thead><tr><th>Layer</th><th>Protocol here</th><th>Size in this frame</th><th class="hide">Common protocols</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="muted" style="margin:10px 0 0;font-size:11px">Terminology: L7 <b>message/data</b> · L4 TCP <b>segment</b> / UDP <b>datagram</b> · L3 <b>packet</b> · L2 <b>frame</b> · L1 <b>bits</b> on the wire. Headers go in front (and sometimes a trailer behind) the payload at each step.</p>`;
+  openModal('OSI / TCP-IP layers of this frame', html);
+}
+
 async function showPacket(seq) {
   selSeq = seq; renderPackets();
   try {
@@ -236,23 +378,27 @@ async function showPacket(seq) {
       const bytes = l.match(/../g), asc = bytes.map(b => { const c = parseInt(b, 16); return c >= 32 && c < 127 ? String.fromCharCode(c) : '.'; }).join('');
       return (i * 16).toString(16).padStart(4, '0') + '  ' + bytes.join(' ').padEnd(47) + '  ' + esc(asc);
     }).join('\n');
+    cur = { hex: p.hex, len: p.len, body: '', httpHdr: 0, httpBody: 0 };
     let payload = '';
     if (p.payload) {
       /* DevTools-style: start line, request/response headers, then the formatted body */
       const i = p.payload.indexOf('\n\n');
       const head = i < 0 ? p.payload : p.payload.slice(0, i);
       const body = i < 0 ? '' : p.payload.slice(i + 2);
+      cur.body = body; cur.httpHdr = head.length; cur.httpBody = body.length;
       const lines = head.split('\n');
       const start = lines.shift() || '';
       const hdrs = lines.filter(l => l.includes(':')).map(l => { const j = l.indexOf(':'); return [l.slice(0, j), l.slice(j + 1).trim()]; });
       const hdrHtml = hdrs.map(([k, v]) => `<dt>${esc(k)}</dt><dd style="text-align:left">${esc(v)}</dd>`).join('');
-      payload = `<div class="layer"><h3><span class="osi">HTTP</span><span>${esc(p.payload_kind)}</span></h3>` +
+      const expand = body ? `<span class="iconbtn" onclick="openBody()">⤢ expand ${/json/i.test(p.payload_kind) || body.trim()[0] === '{' || body.trim()[0] === '[' ? 'JSON' : body.trim()[0] === '<' ? 'tree' : 'body'}</span>` : '';
+      payload = `<div class="layer"><h3><span class="osi">HTTP</span><span style="display:flex;gap:8px;align-items:center">${esc(p.payload_kind)} ${expand}</span></h3>` +
         `<div class="acc" style="font-family:ui-monospace,monospace;word-break:break-all;margin-bottom:6px">${esc(start)}</div>` +
         (hdrHtml ? `<dl class="kv">${hdrHtml}</dl>` : '') +
-        (body ? `<div class="dim" style="font-size:11px;margin:8px 0 2px">BODY</div><pre style="color:var(--good);margin:0;white-space:pre-wrap;word-break:break-word">${esc(body)}</pre>` : '') +
+        (body ? `<div class="dim" style="font-size:11px;margin:8px 0 2px">BODY (${body.length} B)</div><pre style="color:var(--good);margin:0;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto">${esc(body)}</pre>` : '') +
         `</div>`;
     }
-    $('#detail').innerHTML = `<div class="layers">${p.layers.map(l => `<div class="layer"><h3><span class="osi">L${l.osi} ${l.osi_name}</span><span>${esc(l.name)}</span></h3><dl class="kv">${l.fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}${payload}</div><pre>${dump}</pre>`;
+    const toolbar = `<div style="display:flex;gap:8px;margin:10px 0 0"><span class="iconbtn" onclick="openOsi()">ⓘ OSI layers</span>${cur.body ? '<span class="iconbtn" onclick="openBody()">⤢ view response</span>' : ''}</div>`;
+    $('#detail').innerHTML = toolbar + `<div class="layers">${p.layers.map(l => `<div class="layer"><h3><span class="osi">L${l.osi} ${l.osi_name}</span><span>${esc(l.name)}</span></h3><dl class="kv">${l.fields.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`).join('')}${payload}</div><pre>${dump}</pre>`;
   } catch (e) { $('#detail').innerHTML = '<div class="empty">That frame has already left the capture buffer.</div>'; }
 }
 

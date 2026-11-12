@@ -20,6 +20,7 @@
 #include "repeater.h"
 #include "sdkconfig.h"
 #include "sniffer.h"
+#include "ssh_server.h"
 #include "sysmon.h"
 #include "time_sync.h"
 #include "ui/ui.h"
@@ -278,6 +279,14 @@ static esp_err_t h_status(httpd_req_t *req)
         j.fmt(",\"rssi\":%d}", peers[i].rssi);
     }
     j.raw("]},");
+
+    char sshuser[SSH_USER_MAX];
+    ssh_server_user(sshuser, sizeof(sshuser));
+    j.fmt("\"ssh\":{\"running\":%s,\"enabled\":%s,\"port\":%u,\"clients\":%d,",
+          ssh_server_running() ? "true" : "false", ssh_server_enabled() ? "true" : "false", ssh_server_port(),
+          ssh_server_clients());
+    j.kv_str("user", sshuser);
+    j.raw("},");
 
     j.fmt("\"web\":{\"requests\":%lu}}", (unsigned long)s_requests);
     return j.finish();

@@ -308,6 +308,72 @@ void ui_packet_open(uint32_t seq)
     ui_go(UI_SCR_PACKET);
 }
 
+/* Builds a short OSI/TCP-IP encapsulation explainer for the current frame. */
+static void osi_help_text(char *out, size_t cap)
+{
+    const uint8_t *d = s_detail.data;
+    int n = s_detail.caplen;
+    size_t k = 0;
+    k += snprintf(out + k, cap - k,
+                  "The %u-byte frame is built in layers: the app message is wrapped\n"
+                  "in a transport segment, in a network packet, in a link frame.\n\n",
+                  s_detail.len);
+    int off = 0;
+    if (s_detail.src == SNIFF_SRC_AIR || n < 14) {
+        k += snprintf(out + k, cap - k, "L2  802.11 radio frame\nL7  payload\n");
+    } else {
+        uint16_t et = d[12] << 8 | d[13];
+        off = 14;
+        if (et == 0x8100 && n >= 18) { et = d[16] << 8 | d[17]; off = 18; }
+        k += snprintf(out + k, cap - k, "L2  Ethernet frame      %d B header\n", off);
+        if (et == 0x0800 && n >= off + 20) {
+            int ihl = (d[off] & 0x0F) * 4, proto = d[off + 9], l4 = off + ihl;
+            k += snprintf(out + k, cap - k, "L3  IPv4 packet         %d B header\n", ihl);
+            if (proto == 6 && n >= l4 + 20) {
+                int doff = (d[l4 + 12] >> 4) * 4;
+                k += snprintf(out + k, cap - k, "L4  TCP segment         %d B header\n", doff);
+                off = l4 + doff;
+            } else if (proto == 17) {
+                k += snprintf(out + k, cap - k, "L4  UDP datagram        8 B header\n");
+                off = l4 + 8;
+            } else {
+                off = l4;
+            }
+        } else if (et == 0x86DD) {
+            k += snprintf(out + k, cap - k, "L3  IPv6 packet         40 B header\n");
+            off += 40;
+        } else if (et == 0x0806) {
+            k += snprintf(out + k, cap - k, "L3  ARP packet\n");
+            off = s_detail.len;
+        }
+        int app = (int)s_detail.len - off;
+        if (app > 0) k += snprintf(out + k, cap - k, "L7  application data    %d B\n", app);
+    }
+    k += snprintf(out + k, cap - k,
+                  "\nCommon protocols:\n  L7 app  HTTP DNS TLS DHCP\n  L4 transport  TCP UDP QUIC\n"
+                  "  L3 network  IP ICMP ARP\n  L2 link  Ethernet Wi-Fi\n\n"
+                  "Names: L2 unit = frame, L3 = packet, L4 = TCP segment /\nUDP datagram, L7 = message.");
+}
+
+static void osi_close(lv_event_t *e) { lv_msgbox_close((lv_obj_t *)lv_event_get_user_data(e)); }
+
+static void on_osi_info(lv_event_t *)
+{
+    static char txt[640];
+    osi_help_text(txt, sizeof(txt));
+    lv_obj_t *mb = lv_msgbox_create(nullptr);
+    lv_obj_set_size(mb, 300, 232);
+    lv_obj_set_style_bg_color(mb, UI_COL_CARD, 0);
+    lv_obj_set_style_border_color(mb, UI_COL_ACCENT, 0);
+    lv_obj_set_style_border_width(mb, 1, 0);
+    lv_msgbox_add_title(mb, "OSI / TCP-IP layers");
+    lv_obj_t *t = lv_msgbox_add_text(mb, txt);
+    lv_obj_set_style_text_font(t, &lv_font_unscii_8, 0);
+    lv_obj_t *c = lv_msgbox_add_footer_button(mb, "Close");
+    lv_obj_set_style_bg_color(c, UI_COL_CARD_HI, 0);
+    lv_obj_add_event_cb(c, osi_close, LV_EVENT_CLICKED, mb);
+}
+
 lv_obj_t *ui_packet_create(void)
 {
     scratch_init();
@@ -317,6 +383,10 @@ lv_obj_t *ui_packet_create(void)
     ui_set_back_target(UI_SCR_SNIFFER);
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(content, 4, 0);
+
+    lv_obj_t *info = ui_button_outline(content, LV_SYMBOL_LIST "  OSI layers / help");
+    lv_obj_set_size(info, LV_PCT(100), 30);
+    lv_obj_add_event_cb(info, on_osi_info, LV_EVENT_CLICKED, nullptr);
 
     pkt_summary_t sum;
     pkt_summarize(&s_detail, &sum);
